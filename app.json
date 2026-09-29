@@ -15,10 +15,22 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.shockomil.pescaderiapp"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Pescadería Batequis",
+      "shortName": "Pescadería",
+      "backgroundColor": "#ffffff",
+      "themeColor": "#007AFF"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7bac6fde-dfc6-4a33-934c-058f5df97945"
+      }
     }
   }
 }
