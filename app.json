@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "pescaderiapp",
-    "slug": "pescaderiapp",
+    "name": "pescaderiaapp",
+    "slug": "pescaderiaapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,11 +16,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.shockomil.pescaderiapp"
+      "package": "com.shockomil.pescaderiaapp"
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
+      "output": "static",
       "favicon": "./assets/favicon.png",
       "name": "Pescadería Batequis",
       "shortName": "Pescadería",
