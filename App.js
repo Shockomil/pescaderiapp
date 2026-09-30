@@ -3,14 +3,14 @@ import {
   StyleSheet,
   Text,
   View,
-  TouchableOpacity,
-  ScrollView,
   TextInput,
-  Modal,
+  TouchableOpacity,
   Alert,
+  Linking,
   SafeAreaView,
   StatusBar,
-  Linking
+  ScrollView,
+  Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -172,7 +172,6 @@ export default function App() {
         setEstaAbierto(false);
       }
     };
-
     evaluarEstadoNegocio();
     const intervalo = setInterval(evaluarEstadoNegocio, 30000); // Revisa cada 30 segundos
     return () => clearInterval(intervalo);
@@ -212,7 +211,6 @@ export default function App() {
   };
 
   // --- LÓGICA DE SELECCIÓN DE PRODUCTOS Y CARRITO ---
-
   const abrirModalSeleccion = (producto) => {
     setProductoSeleccionado(producto);
     setCantidadInput('');
@@ -235,9 +233,7 @@ export default function App() {
       Alert.alert('Cantidad Inválida', 'Ingresa una cantidad mayor a 0.');
       return;
     }
-
     const subtotal = calcularSubtotalItem(productoSeleccionado.precio, cant, unidadSeleccionada);
-
     const nuevoItem = {
       idCarrito: Date.now().toString(),
       productoId: productoSeleccionado.id,
@@ -246,7 +242,6 @@ export default function App() {
       unidad: unidadSeleccionada,
       subtotal: subtotal
     };
-
     setCarrito([...carrito, nuevoItem]);
     setModalAgregarItem(false);
     setProductoSeleccionado(null);
@@ -262,7 +257,6 @@ export default function App() {
   };
 
   // --- LÓGICA DE ADMINISTRADOR ---
-
   const handleLoginAdmin = async () => {
     if (!emailAdmin || !passwordAdmin) {
       Alert.alert('Error', 'Ingresa correo y contraseña.');
@@ -406,7 +400,6 @@ export default function App() {
   };
 
   // --- CONFIRMAR PEDIDO Y ENVIAR POR WHATSAPP ---
-
   const handleConfirmarPedido = async () => {
     if (!estaAbierto && !isAdmin) {
       Alert.alert('Negocio Cerrado', `Actualmente estamos cerrados. Nuestro horario es de ${horaApertura}:00 hrs a ${horaCierre}:00 hrs.`);
@@ -424,7 +417,6 @@ export default function App() {
       Alert.alert('Horario Requerido', 'Selecciona la hora en la que pasarás por tu pedido.');
       return;
     }
-
     try {
       // 1. Guardar y bloquear hora en Firestore
       await addDoc(collection(db, 'horarios_ocupados'), {
@@ -433,7 +425,7 @@ export default function App() {
         fechaRegistro: new Date().toISOString()
       });
 
-      // 2. Guardar en el historial local del teléfono (Punto 7)
+      // 2. Guardar en el historial local del teléfono
       const registroLocal = {
         fecha: new Date().toLocaleDateString(),
         nombreCliente: nombreCliente.trim(),
@@ -506,7 +498,6 @@ export default function App() {
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-
         {/* BARRA DE ESTADO DE ATENCIÓN (ABIERTO/CERRADO) Y UBICACIÓN */}
         <View style={styles.infoBanner}>
           <View style={styles.statusContainer}>
@@ -515,8 +506,6 @@ export default function App() {
               {estaAbierto ? `ABIERTO (${horaApertura}:00 - ${horaCierre}:00 hrs)` : `CERRADO (Abre a las ${horaApertura}:00 hrs)`}
             </Text>
           </View>
-
-          {/* BOTÓN UBICACIÓN MAPS */}
           <TouchableOpacity style={styles.btnMaps} onPress={() => Linking.openURL(urlUbicacion)}>
             <Text style={styles.btnMapsText}>📍 Ver Maps</Text>
           </TouchableOpacity>
@@ -527,7 +516,6 @@ export default function App() {
           <View style={styles.adminBar}>
             <Text style={styles.adminBarTitle}>⚙️ PANEL DE CONTROL ADMINISTRADOR</Text>
 
-            {/* Controles de Estado Rápido (Abierto/Cerrado Manual) */}
             <View style={styles.adminStatusControlBox}>
               <Text style={styles.adminLabelSmall}>Estado del Negocio:</Text>
               <View style={styles.adminStatusButtonsRow}>
@@ -537,14 +525,12 @@ export default function App() {
                 >
                   <Text style={[styles.btnStatusOptText, modoForzadoEstado === 'abierto' && styles.textWhite]}>🟢 Forzar Abierto</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.btnStatusOpt, modoForzadoEstado === 'auto' && styles.btnStatusOptActiveBlue]}
                   onPress={() => cambiarModoEstadoAdmin('auto')}
                 >
                   <Text style={[styles.btnStatusOptText, modoForzadoEstado === 'auto' && styles.textWhite]}>🕒 Automático</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.btnStatusOpt, modoForzadoEstado === 'cerrado' && styles.btnStatusOptActiveRed]}
                   onPress={() => cambiarModoEstadoAdmin('cerrado')}
@@ -554,7 +540,6 @@ export default function App() {
               </View>
             </View>
 
-            {/* Botones de Edición de Configuración */}
             <View style={styles.adminBarButtons}>
               <TouchableOpacity style={styles.btnAdminAction} onPress={() => setModalNuevoProducto(true)}>
                 <Text style={styles.btnAdminActionText}>+ Prod</Text>
@@ -615,7 +600,6 @@ export default function App() {
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>👤 Datos de Quien Recoge</Text>
           <Text style={styles.sectionSub}>Ingresa los datos de la persona que pasará por el pedido:</Text>
-
           <TextInput
             style={styles.input}
             placeholder="Nombre Completo (Obligatorio) *"
@@ -645,7 +629,6 @@ export default function App() {
                     ${prod.precio} MXN / {prod.unidad || 'Kg'}
                   </Text>
                 </View>
-
                 {prod.disponible ? (
                   <TouchableOpacity style={styles.btnPedir} onPress={() => abrirModalSeleccion(prod)}>
                     <Text style={styles.btnPedirText}>➕ Pedir</Text>
@@ -655,7 +638,6 @@ export default function App() {
                     <Text style={styles.badgeTextAgotado}>AGOTADO</Text>
                   </View>
                 )}
-
                 {isAdmin && (
                   <TouchableOpacity
                     style={[
@@ -691,7 +673,6 @@ export default function App() {
                 </TouchableOpacity>
               </View>
             ))}
-
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Estimado:</Text>
               <Text style={styles.totalAmount}>${calcularTotalCarrito().toFixed(2)} MXN</Text>
@@ -703,44 +684,25 @@ export default function App() {
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>💳 Forma de Pago</Text>
           <Text style={styles.sectionSub}>Selecciona cómo deseas realizar tu pago:</Text>
-
           <View style={styles.metodosPagoContainer}>
             <TouchableOpacity
-              style={[
-                styles.btnMetodoPago,
-                metodoPago === 'efectivo' && styles.btnMetodoPagoActive
-              ]}
+              style={[styles.btnMetodoPago, metodoPago === 'efectivo' && styles.btnMetodoPagoActive]}
               onPress={() => setMetodoPago('efectivo')}
             >
-              <Text
-                style={[
-                  styles.metodoPagoText,
-                  metodoPago === 'efectivo' && styles.metodoPagoTextActive
-                ]}
-              >
+              <Text style={[styles.metodoPagoText, metodoPago === 'efectivo' && styles.metodoPagoTextActive]}>
                 💵 Efectivo en Sucursal
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={[
-                styles.btnMetodoPago,
-                metodoPago === 'transferencia' && styles.btnMetodoPagoActive
-              ]}
+              style={[styles.btnMetodoPago, metodoPago === 'transferencia' && styles.btnMetodoPagoActive]}
               onPress={() => setMetodoPago('transferencia')}
             >
-              <Text
-                style={[
-                  styles.metodoPagoText,
-                  metodoPago === 'transferencia' && styles.metodoPagoTextActive
-                ]}
-              >
+              <Text style={[styles.metodoPagoText, metodoPago === 'transferencia' && styles.metodoPagoTextActive]}>
                 💳 Transferencia Bancaria
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* TARJETA BANCARIA (TRANSFERENCIA) */}
           {metodoPago === 'transferencia' && (
             <View style={styles.bankCard}>
               <Text style={styles.bankCardTitle}>🏦 Datos para Transferir:</Text>
@@ -756,18 +718,11 @@ export default function App() {
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>⏰ Hora de Recolección</Text>
           <Text style={styles.sectionSub}>Toca la barra para desplegar el selector (intervalos de 5 minutos).</Text>
-
           <TouchableOpacity
-            style={[
-              styles.desplegableButton,
-              horaSeleccionada && styles.desplegableButtonActive
-            ]}
+            style={[styles.desplegableButton, horaSeleccionada && styles.desplegableButtonActive]}
             onPress={() => setModalHoraVisible(true)}
           >
-            <Text style={[
-              styles.desplegableText,
-              horaSeleccionada && styles.desplegableTextActive
-            ]}>
+            <Text style={[styles.desplegableText, horaSeleccionada && styles.desplegableTextActive]}>
               {horaSeleccionada ? `⏰ Hora elegida: ${horaSeleccionada}` : '👇 Seleccionar Hora de Recolección'}
             </Text>
             <Text style={styles.desplegableArrow}>▼</Text>
@@ -783,7 +738,6 @@ export default function App() {
             {estaAbierto ? 'Confirmar Pedido y Reservar Hora 🚀' : 'Cerrado por el Momento 🛑'}
           </Text>
         </TouchableOpacity>
-
       </ScrollView>
 
       {/* --- MODAL SELECTOR DESPLEGABLE DE HORA --- */}
@@ -792,7 +746,6 @@ export default function App() {
           <View style={styles.modalContentHora}>
             <Text style={styles.modalTitle}>Elige tu Hora de Recolección</Text>
             <Text style={styles.modalSub}>Intervalos disponibles cada 5 minutos</Text>
-
             <Text style={styles.labelSubSeccion}>1. Selecciona la Hora:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollHoras}>
               {HORAS_JORNADA.map((item) => {
@@ -810,14 +763,12 @@ export default function App() {
                 );
               })}
             </ScrollView>
-
             <Text style={styles.labelSubSeccion}>2. Selecciona los Minutos ({horaBloqueActivo.horaStr} {horaBloqueActivo.ampm}):</Text>
             <View style={styles.gridMinutos}>
               {MINUTOS_INTERVALOS.map((min) => {
                 const horaStringCompleta = `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`;
                 const estaOcupado = horariosOcupados.includes(horaStringCompleta);
                 const estaSeleccionado = horaSeleccionada === horaStringCompleta;
-
                 return (
                   <TouchableOpacity
                     key={min}
@@ -832,20 +783,17 @@ export default function App() {
                       setModalHoraVisible(false);
                     }}
                   >
-                    <Text
-                      style={[
-                        styles.btnMinutoText,
-                        estaOcupado && styles.btnMinutoTextOcupado,
-                        estaSeleccionado && styles.btnMinutoTextSeleccionado
-                      ]}
-                    >
+                    <Text style={[
+                      styles.btnMinutoText,
+                      estaOcupado && styles.btnMinutoTextOcupado,
+                      estaSeleccionado && styles.btnMinutoTextSeleccionado
+                    ]}>
                       {estaOcupado ? 'OCUPADO' : `:${min}`}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-
             <TouchableOpacity
               style={styles.btnCerrarModalHora}
               onPress={() => setModalHoraVisible(false)}
@@ -866,33 +814,23 @@ export default function App() {
             <Text style={styles.modalSub}>
               Precio Base: ${productoSeleccionado?.precio} MXN / {productoSeleccionado?.unidad || 'Kg'}
             </Text>
-
             <Text style={styles.labelInput}>¿Cómo deseas pedirlo?</Text>
             <View style={styles.unitSelectorContainer}>
               {['Kg', 'Gramos', 'Pesos'].map((unid) => (
                 <TouchableOpacity
                   key={unid}
-                  style={[
-                    styles.unitTab,
-                    unidadSeleccionada === unid && styles.unitTabActive
-                  ]}
+                  style={[styles.unitTab, unidadSeleccionada === unid && styles.unitTabActive]}
                   onPress={() => {
                     setUnidadSeleccionada(unid);
                     setCantidadInput('');
                   }}
                 >
-                  <Text
-                    style={[
-                      styles.unitTabText,
-                      unidadSeleccionada === unid && styles.unitTabTextActive
-                    ]}
-                  >
+                  <Text style={[styles.unitTabText, unidadSeleccionada === unid && styles.unitTabTextActive]}>
                     {unid === 'Pesos' ? 'En Pesos ($)' : unid}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-
             <TextInput
               style={styles.input}
               placeholder={
@@ -903,7 +841,6 @@ export default function App() {
               value={cantidadInput}
               onChangeText={setCantidadInput}
             />
-
             {cantidadInput !== '' && !isNaN(parseFloat(cantidadInput)) && (
               <View style={styles.subtotalPreview}>
                 <Text style={styles.subtotalPreviewText}>
@@ -911,7 +848,6 @@ export default function App() {
                 </Text>
               </View>
             )}
-
             <TouchableOpacity style={styles.btnPrimary} onPress={handleAgregarAlCarrito}>
               <Text style={styles.btnPrimaryText}>Añadir al Pedido</Text>
             </TouchableOpacity>
@@ -992,7 +928,6 @@ export default function App() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Configurar Horario de Atención</Text>
             <Text style={styles.modalSub}>Formato de 24 horas (ej. 9 para las 9 AM, 17 para las 5 PM)</Text>
-
             <Text style={styles.labelInput}>Hora de Apertura (0 - 23):</Text>
             <TextInput
               style={styles.input}
@@ -1001,7 +936,6 @@ export default function App() {
               value={nuevaAperturaInput}
               onChangeText={setNuevaAperturaInput}
             />
-
             <Text style={styles.labelInput}>Hora de Cierre (0 - 23):</Text>
             <TextInput
               style={styles.input}
@@ -1010,7 +944,6 @@ export default function App() {
               value={nuevoCierreInput}
               onChangeText={setNuevoCierreInput}
             />
-
             <TouchableOpacity style={styles.btnPrimary} onPress={handleGuardarHorarios}>
               <Text style={styles.btnPrimaryText}>Guardar Horarios</Text>
             </TouchableOpacity>
@@ -1034,7 +967,7 @@ export default function App() {
               onChangeText={setNuevoTelefonoInput}
             />
             <TouchableOpacity style={styles.btnPrimary} onPress={handleGuardarTelefono}>
-              <Text style={styles.btnPrimaryText}>Actualizar Número</Text>
+              <Text style={styles.btnPrimaryText}>Guardar Teléfono</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalEditarTelefono(false)}>
               <Text style={styles.btnSecondaryText}>Cancelar</Text>
@@ -1043,21 +976,20 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* --- MODAL EDITAR DATOS BANCARIOS (ADMIN) --- */}
+      {/* --- MODAL EDITAR BANCO (ADMIN) --- */}
       <Modal visible={modalEditarBanco} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Editar Datos Bancarios</Text>
             <TextInput
-              style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-              placeholder="Escribe Banco, Tarjeta, CLABE y Titular"
+              style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
               multiline
-              numberOfLines={4}
+              placeholder="Banco, Tarjeta, CLABE..."
               value={nuevoBancoInput}
               onChangeText={setNuevoBancoInput}
             />
             <TouchableOpacity style={styles.btnPrimary} onPress={handleGuardarBanco}>
-              <Text style={styles.btnPrimaryText}>Actualizar Información</Text>
+              <Text style={styles.btnPrimaryText}>Guardar Banco</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalEditarBanco(false)}>
               <Text style={styles.btnSecondaryText}>Cancelar</Text>
@@ -1073,12 +1005,12 @@ export default function App() {
             <Text style={styles.modalTitle}>Editar Enlace de Google Maps</Text>
             <TextInput
               style={styles.input}
-              placeholder="URL de Google Maps"
+              placeholder="https://maps.google.com/..."
               value={nuevaUbicacionInput}
               onChangeText={setNuevaUbicacionInput}
             />
             <TouchableOpacity style={styles.btnPrimary} onPress={handleGuardarUbicacion}>
-              <Text style={styles.btnPrimaryText}>Actualizar Ubicación</Text>
+              <Text style={styles.btnPrimaryText}>Guardar Ubicación</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalEditarUbicacion(false)}>
               <Text style={styles.btnSecondaryText}>Cancelar</Text>
@@ -1091,229 +1023,118 @@ export default function App() {
   );
 }
 
-// ESTILOS DE LA APLICACIÓN
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0284c7' },
-  container: { flex: 1, backgroundColor: '#f0f9ff', paddingHorizontal: 16, paddingTop: 16 },
+  container: { flex: 1, backgroundColor: '#f8fafc', padding: 16 },
   header: {
-    backgroundColor: '#0284c7',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#ffffff' },
-  headerSubtitle: { fontSize: 13, color: '#bae6fd' },
-  btnAdminLogin: { backgroundColor: '#0369a1', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  btnAdminLogout: { backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  btnTextSmall: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
-
-  infoBanner: {
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 2
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0284c7',
   },
-  statusContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  statusText: { fontSize: 11, fontWeight: 'bold', color: '#334155' },
-  btnMaps: { backgroundColor: '#e0f2fe', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, marginLeft: 8 },
-  btnMapsText: { fontSize: 11, color: '#0284c7', fontWeight: 'bold' },
-
-  btnRepetir: { backgroundColor: '#38bdf8', paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginTop: 8 },
-  btnRepetirText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
-
-  adminBar: {
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
-    borderWidth: 1,
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  headerSubtitle: { fontSize: 12, color: '#e0f2fe' },
+  btnAdminLogin: { backgroundColor: '#0369a1', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  btnAdminLogout: { backgroundColor: '#dc2626', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  btnTextSmall: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  infoBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 16
-  },
-  adminBarTitle: { fontWeight: 'bold', color: '#b45309', marginBottom: 8, textAlign: 'center', fontSize: 13 },
-  adminStatusControlBox: { marginBottom: 10, backgroundColor: '#fffbeb', padding: 8, borderRadius: 6 },
-  adminLabelSmall: { fontSize: 11, fontWeight: 'bold', color: '#92400e', marginBottom: 4 },
-  adminStatusButtonsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  btnStatusOpt: { flex: 1, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 4, borderWidth: 1, borderColor: '#fcd34d', alignItems: 'center', marginHorizontal: 2, backgroundColor: '#ffffff' },
-  btnStatusOptActiveGreen: { backgroundColor: '#16a34a', borderColor: '#15803d' },
-  btnStatusOptActiveBlue: { backgroundColor: '#0284c7', borderColor: '#0369a1' },
-  btnStatusOptActiveRed: { backgroundColor: '#dc2626', borderColor: '#b91c1c' },
-  btnStatusOptText: { fontSize: 10, fontWeight: 'bold', color: '#78350f' },
-  textWhite: { color: '#ffffff' },
-
-  adminBarButtons: { flexDirection: 'row', justifyContent: 'space-around' },
-  btnAdminAction: { backgroundColor: '#d97706', paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
-  btnAdminActionText: { color: '#fff', fontWeight: 'bold', fontSize: 11 },
-
-  sectionCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 16,
     marginBottom: 16,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5
   },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#0369a1', marginBottom: 8 },
+  statusContainer: { flexDirection: 'row', alignItems: 'center' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  statusText: { fontSize: 13, fontWeight: 'bold', color: '#334155' },
+  btnMaps: { backgroundColor: '#e0f2fe', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  btnMapsText: { color: '#0369a1', fontSize: 12, fontWeight: 'bold' },
+  adminBar: { backgroundColor: '#fef3c7', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#f59e0b' },
+  adminBarTitle: { fontSize: 13, fontWeight: 'bold', color: '#b45309', marginBottom: 8, textAlign: 'center' },
+  adminStatusControlBox: { marginBottom: 10 },
+  adminLabelSmall: { fontSize: 11, fontWeight: 'bold', color: '#78350f', marginBottom: 4 },
+  adminStatusButtonsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  btnStatusOpt: { flex: 1, paddingVertical: 6, marginHorizontal: 2, backgroundColor: '#fff', borderRadius: 4, alignItems: 'center', borderWidth: 1, borderColor: '#d97706' },
+  btnStatusOptActiveGreen: { backgroundColor: '#15803d', borderColor: '#15803d' },
+  btnStatusOptActiveBlue: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
+  btnStatusOptActiveRed: { backgroundColor: '#b91c1c', borderColor: '#b91c1c' },
+  btnStatusOptText: { fontSize: 10, fontWeight: 'bold', color: '#78350f' },
+  textWhite: { color: '#fff' },
+  adminBarButtons: { flexDirection: 'row', justifyContent: 'space-between' },
+  btnAdminAction: { backgroundColor: '#d97706', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flex: 1, marginHorizontal: 2, alignItems: 'center' },
+  btnAdminActionText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  sectionCard: { backgroundColor: '#fff', borderRadius: 8, padding: 16, marginBottom: 16, elevation: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 },
   sectionSub: { fontSize: 12, color: '#64748b', marginBottom: 12 },
-  emptyText: { color: '#94a3b8', fontStyle: 'italic', marginVertical: 10 },
-
-  productRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
-  },
-  productName: { fontSize: 15, fontWeight: '600', color: '#334155' },
-  productPrice: { fontSize: 13, color: '#0284c7', fontWeight: 'bold' },
-  btnPedir: { backgroundColor: '#0284c7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, marginRight: 6 },
-  btnPedirText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
-  badgeAgotado: { backgroundColor: '#fee2e2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginRight: 6 },
-  badgeTextAgotado: { fontSize: 11, fontWeight: 'bold', color: '#ef4444' },
-  btnToggleAdmin: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-
-  cartRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
-  },
-  cartItemName: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
-  cartItemDetails: { fontSize: 12, color: '#0284c7' },
-  btnDelete: { fontSize: 16, padding: 4 },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: '#e2e8f0'
-  },
-  totalLabel: { fontSize: 15, fontWeight: 'bold', color: '#0f172a' },
-  totalAmount: { fontSize: 16, fontWeight: 'bold', color: '#16a34a' },
-
-  metodosPagoContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  btnMetodoPago: {
-    flex: 1,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 3,
-    backgroundColor: '#f8fafc'
-  },
-  btnMetodoPagoActive: {
-    backgroundColor: '#0284c7',
-    borderColor: '#0369a1'
-  },
-  metodoPagoText: { fontSize: 12, fontWeight: 'bold', color: '#475569' },
-  metodoPagoTextActive: { color: '#ffffff' },
-
-  bankCard: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#22c55e',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8
-  },
-  bankCardTitle: { fontWeight: 'bold', color: '#15803d', fontSize: 13, marginBottom: 6 },
-  bankCardBody: { fontSize: 13, color: '#166534', lineHeight: 18, fontWeight: '500' },
-  bankCardNote: { fontSize: 11, color: '#15803d', fontStyle: 'italic', marginTop: 8 },
-
-  desplegableButton: {
-    backgroundColor: '#f0f9ff',
-    borderWidth: 1.5,
-    borderColor: '#0284c7',
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  desplegableButtonActive: {
-    backgroundColor: '#0284c7',
-    borderColor: '#0369a1'
-  },
-  desplegableText: { color: '#0284c7', fontWeight: 'bold', fontSize: 14 },
-  desplegableTextActive: { color: '#ffffff' },
-  desplegableArrow: { color: '#0284c7', fontSize: 12, fontWeight: 'bold' },
-
-  modalContentHora: { backgroundColor: '#ffffff', width: '92%', padding: 20, borderRadius: 14 },
-  labelSubSeccion: { fontSize: 13, fontWeight: 'bold', color: '#334155', marginTop: 10, marginBottom: 8 },
-  scrollHoras: { flexDirection: 'row', marginBottom: 10 },
-  chipHora: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#cbd5e1'
-  },
-  chipHoraActive: { backgroundColor: '#0284c7', borderColor: '#0369a1' },
-  chipHoraText: { fontSize: 13, fontWeight: 'bold', color: '#475569' },
-  chipHoraTextActive: { color: '#ffffff' },
-  gridMinutos: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginVertical: 10 },
-  btnMinuto: {
-    width: '23%',
-    backgroundColor: '#e0f2fe',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#38bdf8'
-  },
-  btnMinutoOcupado: { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' },
-  btnMinutoSeleccionado: { backgroundColor: '#16a34a', borderColor: '#15803d' },
-  btnMinutoText: { fontSize: 13, fontWeight: 'bold', color: '#0369a1' },
-  btnMinutoTextOcupado: { color: '#94a3b8', fontSize: 9 },
-  btnMinutoTextSeleccionado: { color: '#ffffff' },
-  btnCerrarModalHora: { marginTop: 10, alignItems: 'center' },
-
-  btnConfirmar: {
-    backgroundColor: '#16a34a',
-    paddingVertical: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-    elevation: 3
-  },
-  btnConfirmarDisabled: {
-    backgroundColor: '#94a3b8'
-  },
-  btnConfirmarText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: '#ffffff', width: '88%', padding: 20, borderRadius: 12 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#0f172a', textAlign: 'center' },
-  modalSub: { fontSize: 13, color: '#0284c7', textAlign: 'center', marginBottom: 15, fontWeight: '600' },
-  labelInput: { fontSize: 13, fontWeight: 'bold', color: '#334155', marginBottom: 8 },
-
-  unitSelectorContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  unitTab: { flex: 1, paddingVertical: 8, borderWidth: 1, borderColor: '#cbd5e1', alignItems: 'center', marginHorizontal: 2, borderRadius: 6 },
-  unitTabActive: { backgroundColor: '#0284c7', borderColor: '#0369a1' },
-  unitTabText: { fontSize: 12, color: '#475569', fontWeight: 'bold' },
-  unitTabTextActive: { color: '#ffffff' },
-
-  subtotalPreview: { backgroundColor: '#dcfce7', padding: 8, borderRadius: 6, marginBottom: 12, alignItems: 'center' },
-  subtotalPreviewText: { color: '#15803d', fontWeight: 'bold', fontSize: 14 },
-
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 14 },
-  btnPrimary: { backgroundColor: '#0284c7', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  btnPrimaryText: { color: '#ffffff', fontWeight: 'bold', fontSize: 15 },
-  btnSecondaryText: { textAlign: 'center', color: '#64748b', marginTop: 14, fontWeight: '600' }
+  btnRepetir: { backgroundColor: '#e0e7ff', padding: 10, borderRadius: 6, alignItems: 'center', marginTop: 8 },
+  btnRepetirText: { color: '#3730a3', fontSize: 13, fontWeight: 'bold' },
+  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 12 },
+  emptyText: { color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: 10 },
+  productRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  productName: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
+  productPrice: { fontSize: 12, color: '#64748b' },
+  btnPedir: { backgroundColor: '#0284c7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  btnPedirText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  badgeAgotado: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  badgeTextAgotado: { color: '#94a3b8', fontSize: 10, fontWeight: 'bold' },
+  btnToggleAdmin: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, marginLeft: 6 },
+  cartRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  cartItemName: { fontSize: 13, fontWeight: 'bold', color: '#1e293b' },
+  cartItemDetails: { fontSize: 12, color: '#64748b' },
+  btnDelete: { fontSize: 14, padding: 6 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  totalLabel: { fontSize: 14, fontWeight: 'bold', color: '#334155' },
+  totalAmount: { fontSize: 16, fontWeight: 'bold', color: '#0284c7' },
+  metodosPagoContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  btnMetodoPago: { flex: 1, padding: 10, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, alignItems: 'center', marginHorizontal: 4 },
+  btnMetodoPagoActive: { backgroundColor: '#e0f2fe', borderColor: '#0284c7' },
+  metodoPagoText: { fontSize: 12, color: '#64748b', fontWeight: 'bold' },
+  metodoPagoTextActive: { color: '#0284c7' },
+  bankCard: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 6, borderWidth: 1, borderColor: '#e2e8f0', marginTop: 8 },
+  bankCardTitle: { fontSize: 12, fontWeight: 'bold', color: '#1e293b', marginBottom: 4 },
+  bankCardBody: { fontSize: 12, color: '#334155', fontFamily: 'monospace', marginBottom: 6 },
+  bankCardNote: { fontSize: 11, color: '#64748b', fontStyle: 'italic' },
+  desplegableButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 12, backgroundColor: '#fff' },
+  desplegableButtonActive: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  desplegableText: { fontSize: 13, color: '#64748b', fontWeight: 'bold' },
+  desplegableTextActive: { color: '#0284c7' },
+  desplegableArrow: { fontSize: 12, color: '#64748b' },
+  btnConfirmar: { backgroundColor: '#22c55e', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 8, elevation: 3 },
+  btnConfirmarDisabled: { backgroundColor: '#94a3b8' },
+  btnConfirmarText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 20 },
+  modalContent: { backgroundColor: '#fff', borderRadius: 12, padding: 20, elevation: 5 },
+  modalContentHora: { backgroundColor: '#fff', borderRadius: 12, padding: 16, maxHeight: '85%', elevation: 5 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 4, textAlign: 'center' },
+  modalSub: { fontSize: 12, color: '#64748b', marginBottom: 14, textAlign: 'center' },
+  labelSubSeccion: { fontSize: 12, fontWeight: 'bold', color: '#334155', marginTop: 10, marginBottom: 6 },
+  scrollHoras: { maxHeight: 50, marginBottom: 10 },
+  chipHora: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f1f5f9', borderRadius: 6, marginRight: 6, borderWidth: 1, borderColor: '#e2e8f0', justifyContent: 'center' },
+  chipHoraActive: { backgroundColor: '#0284c7', borderColor: '#0284c7' },
+  chipHoraText: { fontSize: 12, fontWeight: 'bold', color: '#334155' },
+  chipHoraTextActive: { color: '#fff' },
+  gridMinutos: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  btnMinuto: { width: '23%', paddingVertical: 10, backgroundColor: '#f8fafc', borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1', alignItems: 'center', marginBottom: 8 },
+  btnMinutoOcupado: { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+  btnMinutoSeleccionado: { backgroundColor: '#dcfce7', borderColor: '#22c55e' },
+  btnMinutoText: { fontSize: 13, fontWeight: 'bold', color: '#334155' },
+  btnMinutoTextOcupado: { color: '#ef4444', fontSize: 10 },
+  btnMinutoTextSeleccionado: { color: '#15803d' },
+  btnCerrarModalHora: { marginTop: 10, padding: 10, alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 6 },
+  labelInput: { fontSize: 12, fontWeight: 'bold', color: '#334155', marginBottom: 6 },
+  unitSelectorContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  unitTab: { flex: 1, paddingVertical: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, alignItems: 'center', marginHorizontal: 2 },
+  unitTabActive: { backgroundColor: '#e0f2fe', borderColor: '#0284c7' },
+  unitTabText: { fontSize: 12, color: '#64748b', fontWeight: 'bold' },
+  unitTabTextActive: { color: '#0284c7' },
+  subtotalPreview: { backgroundColor: '#f0fdf4', padding: 8, borderRadius: 6, marginBottom: 12, borderWidth: 1, borderColor: '#bbf7d0', alignItems: 'center' },
+  subtotalPreviewText: { color: '#15803d', fontSize: 13, fontWeight: 'bold' },
+  btnPrimary: { backgroundColor: '#0284c7', padding: 12, borderRadius: 6, alignItems: 'center', marginTop: 6, marginBottom: 6 },
+  btnPrimaryText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  btnSecondaryText: { color: '#64748b', fontSize: 13, textAlign: 'center', marginTop: 6, fontWeight: 'bold' }
 });

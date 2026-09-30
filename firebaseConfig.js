@@ -1,18 +1,28 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyBfgqOgf41aMkQboIYJBGB3hVsNolKsKsU",
     authDomain: "pescaderia-batequis.firebaseapp.com",
+    databaseURL: "https://pescaderia-batequis-default-rtdb.firebaseio.com",
     projectId: "pescaderia-batequis",
     storageBucket: "pescaderia-batequis.firebasestorage.app",
     messagingSenderId: "155789240392",
-    appId: "1:155789240392:web:144af36bb1ce7f96df907d"
+    appId: "1:155789240392:web:144af36bb1ce7f96df907d",
+    measurementId: "G-P8CDP9ETFN"
 };
 
-// Si la app ya está iniciada en memoria la reutiliza, si no la crea
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 
+// Inicializar Auth con persistencia de React Native
+export const auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+});
+
+// Inicializar Firestore
 export const db = getFirestore(app);
-export const auth = getAuth(app);
