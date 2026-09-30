@@ -1,10 +1,9 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeAuth, getReactNativePersistence, browserLocalPersistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-// Your web app's Firebase configuration
+// Tus credenciales existentes de Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyBfgqOgf41aMkQboIYJBGB3hVsNolKsKsU",
     authDomain: "pescaderia-batequis.firebaseapp.com",
@@ -16,13 +15,19 @@ const firebaseConfig = {
     measurementId: "G-P8CDP9ETFN"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Inicializar la app de Firebase
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Inicializar Auth con persistencia de React Native
-export const auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-});
+// Configurar la autenticación según la plataforma (Web o Móvil)
+let auth;
+if (Platform.OS === 'web') {
+    auth = initializeAuth(app, {
+        persistence: browserLocalPersistence
+    });
+} else {
+    auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage)
+    });
+}
 
-// Inicializar Firestore
-export const db = getFirestore(app);
+export { auth, app };
