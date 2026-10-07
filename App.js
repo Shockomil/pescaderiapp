@@ -496,14 +496,18 @@ export default function App() {
   // LÓGICA DINÁMICA: OCULTAR HORAS Y MINUTOS PASADOS SEGÚN LA HORA DEL DÍA
   // =========================================================================
 
-  // Minutos disponibles en el futuro para una hora dada (considerando margen de preparación de 30 min)
+  // Minutos disponibles en el futuro para una hora dada (considerando margen de preparación estricto)
   const obtenerMinutosDisponibles = (itemHora) => {
     if (!itemHora) return [];
+    const ahora = new Date();
+    const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
+    const margen = tienePreparadosEnCarrito ? 30 : 5;
+
     return MINUTOS_INTERVALOS.filter((minStr) => {
       const minEntero = parseInt(minStr, 10);
       const totalMinutosTurno = itemHora.hora24 * 60 + minEntero;
-      // Exige al menos 30 minutos si hay ceviches/preparados, o 5 minutos para producto crudo
-      return totalMinutosTurno > (minutosActualesDelDia + margenMinutosRequerido);
+      // Cualquier turno a menos de 30 min (si hay preparados) o menos de 5 min (normal) es estrictamente descartado
+      return (totalMinutosTurno - minActuales) >= margen;
     });
   };
 
@@ -516,13 +520,13 @@ export default function App() {
       const minutosFuturos = obtenerMinutosDisponibles(item);
       return minutosFuturos.length > 0;
     });
-  }, [horaApertura, horaCierre, minutosActualesDelDia, margenMinutosRequerido]);
+  }, [horaApertura, horaCierre, minutosActualesDelDia, tienePreparadosEnCarrito]);
 
   // Minutos disponibles para la hora que el usuario tiene abierta en el selector
   const minutosDisponiblesBloque = useMemo(() => {
     if (!horaBloqueActivo) return [];
     return obtenerMinutosDisponibles(horaBloqueActivo);
-  }, [horaBloqueActivo, minutosActualesDelDia, margenMinutosRequerido]);
+  }, [horaBloqueActivo, minutosActualesDelDia, tienePreparadosEnCarrito]);
 
   // Si la hora activa ya expiró o no está en la lista de horas válidas, mover al primer bloque disponible
   useEffect(() => {
@@ -534,7 +538,7 @@ export default function App() {
     }
   }, [horasDisponiblesHoy, horaBloqueActivo]);
 
-  // Si la hora que el usuario tenía seleccionada no cumple con el margen (ej. agregó ceviche que pide 30 min), deseleccionarla
+  // Si la hora que el usuario tenía seleccionada no cumple con el margen de 30 min, cancelarla inmediatamente
   useEffect(() => {
     if (horaSeleccionada) {
       const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
@@ -545,19 +549,23 @@ export default function App() {
         if (ampm === 'PM' && h < 12) h += 12;
         if (ampm === 'AM' && h === 12) h = 0;
         const totalMin = h * 60 + m;
-        if (totalMin <= (minutosActualesDelDia + margenMinutosRequerido)) {
+        const ahora = new Date();
+        const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
+        const margen = tienePreparadosEnCarrito ? 30 : 5;
+        if ((totalMin - minActuales) < margen) {
+          const horaCancelada = horaSeleccionada;
           setHoraSeleccionada(null);
           if (tienePreparadosEnCarrito) {
             mostrarAviso(
-              'Horario Reajustado (30 min)',
-              'Al incluir ceviches o preparados se requieren al menos 30 minutos de elaboración. Por favor selecciona tu nuevo turno disponible.',
+              'Horario Reajustado (+30 min)',
+              `Se liberó el turno de las ${horaCancelada} porque al incluir ceviches o preparados la cocina requiere al menos 30 minutos de elaboración. Por favor selecciona tu nuevo turno.`,
               'info'
             );
           }
         }
       }
     }
-  }, [minutosActualesDelDia, horaSeleccionada, margenMinutosRequerido, tienePreparadosEnCarrito]);
+  }, [minutosActualesDelDia, horaSeleccionada, tienePreparadosEnCarrito]);
 
   const abrirModalHora = () => {
     if (horasDisponiblesHoy.length > 0) {
@@ -628,6 +636,32 @@ export default function App() {
       unidad: unidadSeleccionada,
       subtotal: subtotal
     };
+
+    // Si se agrega un preparado/ceviche y ya había una hora seleccionada que no cumple los 30 min, cancelarla de inmediato
+    const esPreparado = nuevoItem.categoria === 'preparados';
+    if (esPreparado && horaSeleccionada) {
+      const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        const totalMin = h * 60 + m;
+        const ahora = new Date();
+        const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
+        if ((totalMin - minActuales) < 30) {
+          const horaCancelada = horaSeleccionada;
+          setHoraSeleccionada(null);
+          mostrarAviso(
+            'Turno Reajustado (+30 min)',
+            `Se canceló tu turno previo de las ${horaCancelada} porque al agregar "${productoSeleccionado.nombre}" se requieren al menos 30 minutos de preparación.`,
+            'info'
+          );
+        }
+      }
+    }
+
     setCarrito([...carrito, nuevoItem]);
     setModalAgregarItem(false);
     setProductoSeleccionado(null);
@@ -2009,43 +2043,69 @@ export default function App() {
                   })}
                 </ScrollView>
 
-                {/* 2. SELECCIÓN DE MINUTOS (SOLO MINUTOS EN EL FUTURO) */}
+                {/* 2. SELECCIÓN DE TURNOS (INDICANDO HORA COMPLETA Y TIEMPO RESTANTE) */}
                 <Text style={styles.stepSubtitle}>
-                  2. Minutos disponibles para las {horaBloqueActivo?.horaStr} {horaBloqueActivo?.ampm}:
+                  2. Elige tu Turno para las {horaBloqueActivo?.horaStr} {horaBloqueActivo?.ampm}:
                 </Text>
-                <View style={styles.minutesGrid}>
-                  {minutosDisponiblesBloque.map((min) => {
-                    const horaStringCompleta = `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`;
-                    const estaOcupado = listaHorasOcupadas.includes(horaStringCompleta);
-                    const estaSeleccionado = horaSeleccionada === horaStringCompleta;
+                {minutosDisponiblesBloque.length === 0 ? (
+                  <View style={styles.noMinutesAlertBox}>
+                    <Text style={styles.noMinutesAlertText}>
+                      No hay turnos disponibles para las {horaBloqueActivo?.horaStr} {horaBloqueActivo?.ampm} que cumplan los 30 minutos requeridos de preparación. Por favor selecciona la siguiente hora.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.minutesGrid}>
+                    {minutosDisponiblesBloque.map((min) => {
+                      const horaStringCompleta = `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`;
+                      const estaOcupado = listaHorasOcupadas.includes(horaStringCompleta);
+                      const estaSeleccionado = horaSeleccionada === horaStringCompleta;
 
-                    return (
-                      <TouchableOpacity
-                        key={min}
-                        disabled={estaOcupado}
-                        style={[
-                          styles.minuteBtn,
-                          estaOcupado && styles.minuteBtnOccupied,
-                          estaSeleccionado && styles.minuteBtnSelected
-                        ]}
-                        onPress={() => {
-                          setHoraSeleccionada(horaStringCompleta);
-                          setModalHoraVisible(false);
-                        }}
-                      >
-                        <Text
+                      const ahora = new Date();
+                      const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
+                      let h = parseInt(horaBloqueActivo.horaStr, 10);
+                      const m = parseInt(min, 10);
+                      if (horaBloqueActivo.ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+                      if (horaBloqueActivo.ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+                      const diffMins = (h * 60 + m) - minActuales;
+
+                      return (
+                        <TouchableOpacity
+                          key={min}
+                          disabled={estaOcupado}
                           style={[
-                            styles.minuteBtnText,
-                            estaOcupado && styles.minuteBtnTextOccupied,
-                            estaSeleccionado && styles.minuteBtnTextSelected
+                            styles.minuteBtn,
+                            estaOcupado && styles.minuteBtnOccupied,
+                            estaSeleccionado && styles.minuteBtnSelected
                           ]}
+                          onPress={() => {
+                            setHoraSeleccionada(horaStringCompleta);
+                            setModalHoraVisible(false);
+                          }}
                         >
-                          {estaOcupado ? 'OCUPADO' : `:${min}`}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                          <Text
+                            style={[
+                              styles.minuteBtnTimeText,
+                              estaOcupado && styles.minuteBtnTextOccupied,
+                              estaSeleccionado && styles.minuteBtnTextSelected
+                            ]}
+                          >
+                            {estaOcupado ? 'OCUPADO' : `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`}
+                          </Text>
+                          {!estaOcupado && (
+                            <Text
+                              style={[
+                                styles.minuteBtnDiffText,
+                                estaSeleccionado && { color: '#ffedd5' }
+                              ]}
+                            >
+                              En {diffMins} min
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
               </>
             )}
 
@@ -4091,11 +4151,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   minuteBtn: {
-    width: '23%',
+    width: '48%',
     paddingVertical: 10,
+    paddingHorizontal: 6,
     backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: '#cbd5e1',
     alignItems: 'center',
     marginBottom: 8,
@@ -4105,22 +4166,43 @@ const styles = StyleSheet.create({
     borderColor: '#fca5a5',
   },
   minuteBtnSelected: {
-    backgroundColor: '#dcfce7',
-    borderColor: '#22c55e',
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
   },
-  minuteBtnText: {
+  minuteBtnTimeText: {
     fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  minuteBtnDiffText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#334155',
+    color: '#0284c7',
+    marginTop: 2,
   },
   minuteBtnTextOccupied: {
     color: '#ef4444',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
   },
   minuteBtnTextSelected: {
-    color: '#15803d',
+    color: '#ffffff',
     fontWeight: '800',
+  },
+  noMinutesAlertBox: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  noMinutesAlertText: {
+    fontSize: 12,
+    color: '#c2410c',
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 16,
   },
 
   // --- MODAL CANTIDAD UNIDADES ---
