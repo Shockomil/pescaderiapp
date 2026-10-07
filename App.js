@@ -331,10 +331,36 @@ export default function App() {
     return () => clearInterval(intervalo);
   }, [horaApertura, horaCierre, modoForzadoEstado]);
 
-  // 6. Cargar historial local
+  // 6. Cargar datos de cliente guardados e historial local
   useEffect(() => {
+    cargarDatosClienteGuardados();
     cargarHistorialLocal();
   }, []);
+
+  const cargarDatosClienteGuardados = async () => {
+    try {
+      const nombreGuardado = await AsyncStorage.getItem('@nombre_cliente');
+      if (nombreGuardado) {
+        setNombreCliente(nombreGuardado);
+      }
+      const telGuardado = await AsyncStorage.getItem('@telefono_cliente');
+      if (telGuardado) {
+        setTelefonoCliente(telGuardado);
+      }
+    } catch (e) {
+      console.log('Error cargando datos de cliente guardados', e);
+    }
+  };
+
+  const handleCambioNombreCliente = (texto) => {
+    setNombreCliente(texto);
+    AsyncStorage.setItem('@nombre_cliente', texto).catch(() => {});
+  };
+
+  const handleCambioTelefonoCliente = (texto) => {
+    setTelefonoCliente(texto);
+    AsyncStorage.setItem('@telefono_cliente', texto).catch(() => {});
+  };
 
   const cargarHistorialLocal = async () => {
     try {
@@ -585,7 +611,16 @@ export default function App() {
       const metodoPagoTexto = metodoPago === 'transferencia' ? '💳 Transferencia Bancaria' : '💵 Efectivo en Sucursal';
       const fechaHoyFormateada = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-      // 3. Guardar en historial local del dispositivo
+      // 3. Guardar en historial local del dispositivo y asegurar persistencia del nombre
+      try {
+        await AsyncStorage.setItem('@nombre_cliente', nombreCliente.trim());
+        if (telefonoCliente.trim()) {
+          await AsyncStorage.setItem('@telefono_cliente', telefonoCliente.trim());
+        }
+      } catch (e) {
+        console.log('Error persistiendo nombre de cliente', e);
+      }
+
       const registroLocal = {
         folio: folio,
         fecha: fechaHoyFormateada,
@@ -1140,24 +1175,34 @@ export default function App() {
               </View>
             </View>
             <View style={styles.formGroup}>
-              <Text style={styles.inputLabel}>Nombre Completo *</Text>
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Nombre Completo *</Text>
+                {nombreCliente.trim().length > 0 && (
+                  <Text style={styles.inputHelperSaved}>✓ Guardado en tu dispositivo</Text>
+                )}
+              </View>
               <TextInput
                 style={styles.textInputModern}
                 placeholder="Ej. Juan Pérez"
                 placeholderTextColor="#94a3b8"
                 value={nombreCliente}
-                onChangeText={setNombreCliente}
+                onChangeText={handleCambioNombreCliente}
               />
             </View>
             <View style={[styles.formGroup, { marginBottom: 0 }]}>
-              <Text style={styles.inputLabel}>Teléfono Celular (Opcional)</Text>
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Teléfono Celular (Opcional)</Text>
+                {telefonoCliente.trim().length > 0 && (
+                  <Text style={styles.inputHelperSaved}>✓ Guardado</Text>
+                )}
+              </View>
               <TextInput
                 style={styles.textInputModern}
                 placeholder="Ej. 6681234567"
                 placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"
                 value={telefonoCliente}
-                onChangeText={setTelefonoCliente}
+                onChangeText={handleCambioTelefonoCliente}
               />
             </View>
           </View>
@@ -2622,11 +2667,21 @@ const styles = StyleSheet.create({
   formGroup: {
     marginBottom: 12,
   },
+  inputLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  inputHelperSaved: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
+  },
   inputLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: '#334155',
-    marginBottom: 6,
   },
   textInputModern: {
     borderWidth: 1,
