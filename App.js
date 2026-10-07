@@ -397,79 +397,11 @@ export default function App() {
   };
 
   // =========================================================================
-  // LÓGICA DINÁMICA: OCULTAR HORAS Y MINUTOS PASADOS SEGÚN LA HORA DEL DÍA
+  // DETECCIÓN INTELIGENTE DE CATEGORÍAS Y TIEMPO DE PREPARACIÓN
   // =========================================================================
 
-  // Minutos disponibles en el futuro para una hora dada (con margen de 5 min)
-  const obtenerMinutosDisponibles = (itemHora) => {
-    if (!itemHora) return [];
-    return MINUTOS_INTERVALOS.filter((minStr) => {
-      const minEntero = parseInt(minStr, 10);
-      const totalMinutosTurno = itemHora.hora24 * 60 + minEntero;
-      // Solo turnos que estén al menos 5 minutos en el futuro
-      return totalMinutosTurno > (minutosActualesDelDia + 5);
-    });
-  };
-
-  // Horas del día que aún tienen minutos disponibles y están en horario comercial
-  const horasDisponiblesHoy = useMemo(() => {
-    return HORAS_JORNADA.filter((item) => {
-      // 1. Debe estar dentro del horario de atención
-      if (item.hora24 < horaApertura || item.hora24 >= horaCierre) {
-        return false;
-      }
-      // 2. Debe tener al menos un minuto disponible en el futuro
-      const minutosFuturos = obtenerMinutosDisponibles(item);
-      return minutosFuturos.length > 0;
-    });
-  }, [horaApertura, horaCierre, minutosActualesDelDia]);
-
-  // Minutos disponibles para la hora que el usuario tiene abierta en el selector
-  const minutosDisponiblesBloque = useMemo(() => {
-    if (!horaBloqueActivo) return [];
-    return obtenerMinutosDisponibles(horaBloqueActivo);
-  }, [horaBloqueActivo, minutosActualesDelDia]);
-
-  // Si la hora activa ya expiró o no está en la lista de horas válidas, mover al primer bloque disponible
-  useEffect(() => {
-    if (horasDisponiblesHoy.length > 0) {
-      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
-      if (!sigueValida) {
-        setHoraBloqueActivo(horasDisponiblesHoy[0]);
-      }
-    }
-  }, [horasDisponiblesHoy, horaBloqueActivo]);
-
-  // Si la hora que el usuario ya tenía seleccionada pasa al pasado mientras usa la app, deseleccionarla
-  useEffect(() => {
-    if (horaSeleccionada) {
-      const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const ampm = match[3].toUpperCase();
-        if (ampm === 'PM' && h < 12) h += 12;
-        if (ampm === 'AM' && h === 12) h = 0;
-        const totalMin = h * 60 + m;
-        if (totalMin <= (minutosActualesDelDia + 5)) {
-          setHoraSeleccionada(null);
-        }
-      }
-    }
-  }, [minutosActualesDelDia, horaSeleccionada]);
-
-  const abrirModalHora = () => {
-    if (horasDisponiblesHoy.length > 0) {
-      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
-      if (!sigueValida) {
-        setHoraBloqueActivo(horasDisponiblesHoy[0]);
-      }
-    }
-    setModalHoraVisible(true);
-  };
-
-  // --- DETECCIÓN INTELIGENTE DE CATEGORÍA ---
   const obtenerCategoriaProducto = (prod) => {
+    if (!prod) return 'pescado';
     if (prod.categoria) return prod.categoria;
     const n = (prod.nombre || '').toLowerCase();
     if (
@@ -549,7 +481,95 @@ export default function App() {
     }
   };
 
-  // Turno más próximo estimado disponible (20-30 min)
+  // Verifica si el cliente tiene al menos un platillo o ceviche en el carrito
+  const tienePreparadosEnCarrito = useMemo(() => {
+    return carrito.some((item) => {
+      const cat = item.categoria || obtenerCategoriaProducto(item);
+      return cat === 'preparados';
+    });
+  }, [carrito]);
+
+  // Si incluye preparados/ceviches exige al menos 30 min de margen de cocina; de lo contrario 5 min
+  const margenMinutosRequerido = tienePreparadosEnCarrito ? 30 : 5;
+
+  // =========================================================================
+  // LÓGICA DINÁMICA: OCULTAR HORAS Y MINUTOS PASADOS SEGÚN LA HORA DEL DÍA
+  // =========================================================================
+
+  // Minutos disponibles en el futuro para una hora dada (considerando margen de preparación de 30 min)
+  const obtenerMinutosDisponibles = (itemHora) => {
+    if (!itemHora) return [];
+    return MINUTOS_INTERVALOS.filter((minStr) => {
+      const minEntero = parseInt(minStr, 10);
+      const totalMinutosTurno = itemHora.hora24 * 60 + minEntero;
+      // Exige al menos 30 minutos si hay ceviches/preparados, o 5 minutos para producto crudo
+      return totalMinutosTurno > (minutosActualesDelDia + margenMinutosRequerido);
+    });
+  };
+
+  // Horas del día que aún tienen minutos disponibles y están en horario comercial
+  const horasDisponiblesHoy = useMemo(() => {
+    return HORAS_JORNADA.filter((item) => {
+      if (item.hora24 < horaApertura || item.hora24 >= horaCierre) {
+        return false;
+      }
+      const minutosFuturos = obtenerMinutosDisponibles(item);
+      return minutosFuturos.length > 0;
+    });
+  }, [horaApertura, horaCierre, minutosActualesDelDia, margenMinutosRequerido]);
+
+  // Minutos disponibles para la hora que el usuario tiene abierta en el selector
+  const minutosDisponiblesBloque = useMemo(() => {
+    if (!horaBloqueActivo) return [];
+    return obtenerMinutosDisponibles(horaBloqueActivo);
+  }, [horaBloqueActivo, minutosActualesDelDia, margenMinutosRequerido]);
+
+  // Si la hora activa ya expiró o no está en la lista de horas válidas, mover al primer bloque disponible
+  useEffect(() => {
+    if (horasDisponiblesHoy.length > 0) {
+      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      if (!sigueValida) {
+        setHoraBloqueActivo(horasDisponiblesHoy[0]);
+      }
+    }
+  }, [horasDisponiblesHoy, horaBloqueActivo]);
+
+  // Si la hora que el usuario tenía seleccionada no cumple con el margen (ej. agregó ceviche que pide 30 min), deseleccionarla
+  useEffect(() => {
+    if (horaSeleccionada) {
+      const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        const totalMin = h * 60 + m;
+        if (totalMin <= (minutosActualesDelDia + margenMinutosRequerido)) {
+          setHoraSeleccionada(null);
+          if (tienePreparadosEnCarrito) {
+            mostrarAviso(
+              'Horario Reajustado (30 min)',
+              'Al incluir ceviches o preparados se requieren al menos 30 minutos de elaboración. Por favor selecciona tu nuevo turno disponible.',
+              'info'
+            );
+          }
+        }
+      }
+    }
+  }, [minutosActualesDelDia, horaSeleccionada, margenMinutosRequerido, tienePreparadosEnCarrito]);
+
+  const abrirModalHora = () => {
+    if (horasDisponiblesHoy.length > 0) {
+      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      if (!sigueValida) {
+        setHoraBloqueActivo(horasDisponiblesHoy[0]);
+      }
+    }
+    setModalHoraVisible(true);
+  };
+
+  // Turno más próximo estimado disponible (respetando margen de 30 min para preparados)
   const turnoMasProximo = useMemo(() => {
     for (const h of horasDisponiblesHoy) {
       const mins = obtenerMinutosDisponibles(h);
@@ -561,7 +581,7 @@ export default function App() {
       }
     }
     return null;
-  }, [horasDisponiblesHoy, listaHorasOcupadas]);
+  }, [horasDisponiblesHoy, listaHorasOcupadas, margenMinutosRequerido]);
 
   // --- FILTRADO DE PRODUCTOS ---
   const productosFiltrados = useMemo(() => {
@@ -613,14 +633,6 @@ export default function App() {
     setProductoSeleccionado(null);
     setCantidadInput('');
   };
-
-  // Verifica si el cliente tiene al menos un platillo o ceviche en el carrito
-  const tienePreparadosEnCarrito = useMemo(() => {
-    return carrito.some((item) => {
-      const cat = item.categoria || obtenerCategoriaProducto(item);
-      return cat === 'preparados';
-    });
-  }, [carrito]);
 
   const handleEliminarDelCarrito = (idCarrito) => {
     setCarrito(carrito.filter((item) => item.idCarrito !== idCarrito));
@@ -1737,6 +1749,19 @@ export default function App() {
                 <Text style={styles.cardSub}>Apartamos tu turno para que tu producto esté listo</Text>
               </View>
             </View>
+
+            {/* AVISO DE TIEMPO DE PREPARACIÓN DE 30 MINUTOS SI HAY CEVICHES */}
+            {tienePreparadosEnCarrito && (
+              <View style={styles.prepTimeNoticeBox}>
+                <Text style={styles.prepTimeNoticeIcon}>⏱️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.prepTimeNoticeTitle}>Tiempo de Cocina Requerido (Mínimo 30 min)</Text>
+                  <Text style={styles.prepTimeNoticeDesc}>
+                    Al incluir ceviches o platillos preparados, los turnos comienzan a partir de 30 minutos en adelante para asegurar su frescura y preparación al momento.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {Boolean(turnoMasProximo) && (
               <TouchableOpacity
@@ -3389,6 +3414,33 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+
+  // --- AVISO TIEMPO DE PREPARACIÓN (30 MIN) ---
+  prepTimeNoticeBox: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  prepTimeNoticeIcon: {
+    fontSize: 20,
+  },
+  prepTimeNoticeTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#c2410c',
+  },
+  prepTimeNoticeDesc: {
+    fontSize: 11,
+    color: '#9a3412',
+    marginTop: 2,
+    lineHeight: 15,
   },
 
   // --- SELECTOR DE HORA TRIGGER ---
