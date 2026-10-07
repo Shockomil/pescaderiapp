@@ -879,6 +879,15 @@ export default function App() {
 
       {/* CONTENEDOR PRINCIPAL RESPONSIVE */}
       <View style={styles.appContainer}>
+        {/* MARCA DE AGUA SUTIL DE FONDO (Logo Oficial Batequis) */}
+        <View style={styles.watermarkBgContainer} pointerEvents="none">
+          <Image
+            source={LOGO_IMG}
+            style={styles.watermarkBgImage}
+            resizeMode="contain"
+          />
+        </View>
+
         {/* ENCABEZADO */}
         <View style={styles.header}>
           <View style={styles.headerBrand}>
@@ -1525,6 +1534,10 @@ export default function App() {
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* TICKET DIGITAL CON DISEÑO FORMAL DE COMPROBANTE */}
               <View style={styles.digitalTicketReceipt}>
+                {/* MARCA DE AGUA INTERNA EN TICKET */}
+                <View style={styles.ticketWatermarkContainer} pointerEvents="none">
+                  <Image source={LOGO_IMG} style={styles.ticketWatermarkImage} resizeMode="contain" />
+                </View>
                 <View style={styles.ticketTopHeader}>
                   <Image source={LOGO_IMG} style={styles.ticketLogoImg} resizeMode="contain" />
                   <Text style={styles.ticketStoreName}>PESCADERÍA BATEQUIS</Text>
@@ -2202,6 +2215,23 @@ const styles = StyleSheet.create({
     maxWidth: 620,
     alignSelf: 'center',
     backgroundColor: '#f8fafc',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  watermarkBgContainer: {
+    position: 'absolute',
+    top: 60,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 0,
+    opacity: 0.04,
+  },
+  watermarkBgImage: {
+    width: 320,
+    height: 320,
   },
 
   // --- HEADER ---
@@ -3096,6 +3126,23 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  ticketWatermarkContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 0,
+    opacity: 0.035,
+  },
+  ticketWatermarkImage: {
+    width: 220,
+    height: 220,
   },
   ticketTopHeader: {
     alignItems: 'center',
