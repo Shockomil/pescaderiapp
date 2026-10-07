@@ -58,6 +58,45 @@ const obtenerFechaHoyStr = () => {
   return `${year}-${month}-${day}`;
 };
 
+// Helper para extraer de forma inteligente los campos bancarios si vienen en texto plano
+const parsearDatosBancarios = (texto) => {
+  if (!texto) return { banco: 'BBVA', tarjeta: '', clabe: '', titular: 'Pescadería Batequis' };
+  let banco = '';
+  let tarjeta = '';
+  let clabe = '';
+  let titular = '';
+
+  const lineas = texto.split('\n');
+  lineas.forEach((linea) => {
+    const l = linea.trim();
+    if (/^banco\s*:/i.test(l)) {
+      banco = l.replace(/^banco\s*:/i, '').trim();
+    } else if (/^tarjeta\s*:/i.test(l)) {
+      tarjeta = l.replace(/^tarjeta\s*:/i, '').trim();
+    } else if (/^clabe\s*:/i.test(l)) {
+      clabe = l.replace(/^clabe\s*:/i, '').trim();
+    } else if (/^titular\s*:/i.test(l)) {
+      titular = l.replace(/^titular\s*:/i, '').trim();
+    }
+  });
+
+  if (!tarjeta) {
+    const matchTarjeta = texto.match(/\b(?:\d[ -]*?){16}\b/);
+    if (matchTarjeta) tarjeta = matchTarjeta[0].replace(/[^0-9]/g, '');
+  }
+  if (!clabe) {
+    const matchClabe = texto.match(/\b\d{18}\b/);
+    if (matchClabe) clabe = matchClabe[0];
+  }
+
+  return {
+    banco: banco || 'BBVA',
+    tarjeta: tarjeta || '1234 5678 9012 3456',
+    clabe: clabe || '012180012345678901',
+    titular: titular || 'Pescadería Batequis'
+  };
+};
+
 export default function App() {
   // --- AUTENTICACIÓN ADMIN ---
   const [isAdmin, setIsAdmin] = useState(false);
@@ -69,9 +108,16 @@ export default function App() {
   const [productos, setProductos] = useState([]);
   const [horariosOcupadosDocs, setHorariosOcupadosDocs] = useState([]); // Solo turnos del día de hoy
   const [telefonoContacto, setTelefonoContacto] = useState('6681234567');
+
+  // Datos bancarios estructurados
+  const [bancoNombre, setBancoNombre] = useState('BBVA');
+  const [bancoTarjeta, setBancoTarjeta] = useState('1234 5678 9012 3456');
+  const [bancoClabe, setBancoClabe] = useState('012180012345678901');
+  const [bancoTitular, setBancoTitular] = useState('Pescadería Batequis');
   const [datosBancarios, setDatosBancarios] = useState(
     'Banco: BBVA\nTarjeta: 1234 5678 9012 3456\nCLABE: 012180012345678901\nTitular: Pescadería Batequis'
   );
+
   const [urlUbicacion, setUrlUbicacion] = useState('https://maps.google.com');
 
   // Configuración de horario y estado del negocio
@@ -113,6 +159,9 @@ export default function App() {
   const [unidadSeleccionada, setUnidadSeleccionada] = useState('Kg');
   const [metodoPago, setMetodoPago] = useState('efectivo');
 
+  // --- FEEDBACK DE COPIADO INDIVIDUAL ---
+  const [campoCopiado, setCampoCopiado] = useState(null); // 'banco', 'tarjeta', 'clabe', 'titular', 'todo'
+
   // --- SELECTOR DE HORARIO DINÁMICO ---
   const [horaSeleccionada, setHoraSeleccionada] = useState(null);
   const [modalHoraVisible, setModalHoraVisible] = useState(false);
@@ -140,8 +189,12 @@ export default function App() {
   const [modalEditarTelefono, setModalEditarTelefono] = useState(false);
   const [nuevoTelefonoInput, setNuevoTelefonoInput] = useState('');
 
+  // Estados para modal de edición de banco individual
   const [modalEditarBanco, setModalEditarBanco] = useState(false);
-  const [nuevoBancoInput, setNuevoBancoInput] = useState('');
+  const [inputBancoNombre, setInputBancoNombre] = useState('');
+  const [inputBancoTarjeta, setInputBancoTarjeta] = useState('');
+  const [inputBancoClabe, setInputBancoClabe] = useState('');
+  const [inputBancoTitular, setInputBancoTitular] = useState('');
 
   const [modalEditarUbicacion, setModalEditarUbicacion] = useState(false);
   const [nuevaUbicacionInput, setNuevaUbicacionInput] = useState('');
@@ -208,21 +261,47 @@ export default function App() {
     return horariosOcupadosDocs.map((item) => item.hora);
   }, [horariosOcupadosDocs]);
 
-  // 4. Escuchar configuración general
+  // 4. Escuchar configuración general (incluyendo datos bancarios individuales)
   useEffect(() => {
     const unsubscribeConfig = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.telefono) setTelefonoContacto(data.telefono);
-        if (data.datosBancarios) setDatosBancarios(data.datosBancarios);
         if (data.urlUbicacion) setUrlUbicacion(data.urlUbicacion);
         if (data.horaApertura !== undefined) setHoraApertura(Number(data.horaApertura));
         if (data.horaCierre !== undefined) setHoraCierre(Number(data.horaCierre));
         if (data.modoForzadoEstado) setModoForzadoEstado(data.modoForzadoEstado);
+
+        // Campos bancarios individuales y backward-compatibility
+        if (data.bancoNombre) setBancoNombre(data.bancoNombre);
+        if (data.bancoTarjeta) setBancoTarjeta(data.bancoTarjeta);
+        if (data.bancoClabe) setBancoClabe(data.bancoClabe);
+        if (data.bancoTitular) setBancoTitular(data.bancoTitular);
+        if (data.datosBancarios) {
+          setDatosBancarios(data.datosBancarios);
+          const parsed = parsearDatosBancarios(data.datosBancarios);
+          if (!data.bancoNombre && parsed.banco) setBancoNombre(parsed.banco);
+          if (!data.bancoTarjeta && parsed.tarjeta) setBancoTarjeta(parsed.tarjeta);
+          if (!data.bancoClabe && parsed.clabe) setBancoClabe(parsed.clabe);
+          if (!data.bancoTitular && parsed.titular) setBancoTitular(parsed.titular);
+        }
       }
     });
     return () => unsubscribeConfig();
   }, []);
+
+  // Datos bancarios unificados para mostrar
+  const datosBancariosEstructurados = useMemo(() => {
+    if (bancoNombre || bancoTarjeta || bancoClabe || bancoTitular) {
+      return {
+        banco: bancoNombre || 'BBVA',
+        tarjeta: bancoTarjeta || '',
+        clabe: bancoClabe || '',
+        titular: bancoTitular || 'Pescadería Batequis'
+      };
+    }
+    return parsearDatosBancarios(datosBancarios);
+  }, [bancoNombre, bancoTarjeta, bancoClabe, bancoTitular, datosBancarios]);
 
   // 5. Evaluar estado de apertura del negocio
   useEffect(() => {
@@ -410,24 +489,30 @@ export default function App() {
     return carrito.reduce((acc, item) => acc + item.subtotal, 0);
   };
 
-  // --- COPIAR AL PORTAPAPELES (WEB / NATIVE) ---
-  const copiarAlPortapapeles = async (texto, mensajeExito = 'Copiado al portapapeles') => {
+  // --- COPIAR AL PORTAPAPELES CON INDICADOR INDIVIDUAL ---
+  const copiarAlPortapapeles = async (texto, mensajeExito = 'Copiado al portapapeles', campoId = null) => {
     try {
+      const textoLimpio = String(texto).trim();
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(texto);
+        await navigator.clipboard.writeText(textoLimpio);
       } else {
         if (typeof document !== 'undefined') {
           const tempInput = document.createElement('textarea');
-          tempInput.value = texto;
+          tempInput.value = textoLimpio;
           document.body.appendChild(tempInput);
           tempInput.select();
           document.execCommand('copy');
           document.body.removeChild(tempInput);
         }
       }
-      setCopiadoFeedback(true);
-      setTimeout(() => setCopiadoFeedback(false), 3000);
-      mostrarAviso('Copiado', mensajeExito, 'exito');
+      if (campoId) {
+        setCampoCopiado(campoId);
+        setTimeout(() => setCampoCopiado(null), 2500);
+      } else {
+        setCopiadoFeedback(true);
+        setTimeout(() => setCopiadoFeedback(false), 2500);
+      }
+      mostrarAviso('¡Copiado!', mensajeExito, 'exito');
     } catch (err) {
       mostrarAviso('Información', 'Selecciona el texto para copiarlo manualmente.');
     }
@@ -710,15 +795,38 @@ export default function App() {
     }
   };
 
+  // Abrir modal de edición estructurada de datos bancarios
+  const handleAbrirEditarBanco = () => {
+    setInputBancoNombre(datosBancariosEstructurados.banco);
+    setInputBancoTarjeta(datosBancariosEstructurados.tarjeta);
+    setInputBancoClabe(datosBancariosEstructurados.clabe);
+    setInputBancoTitular(datosBancariosEstructurados.titular);
+    setModalEditarBanco(true);
+  };
+
   const handleGuardarBanco = async () => {
-    if (!nuevoBancoInput.trim()) {
-      mostrarAviso('Información Requerida', 'Ingresa los datos bancarios para transferencia.', 'error');
-      return;
-    }
     try {
+      const nombreLimpio = inputBancoNombre.trim() || 'BBVA';
+      const tarjetaLimpia = inputBancoTarjeta.trim();
+      const clabeLimpia = inputBancoClabe.trim();
+      const titularLimpio = inputBancoTitular.trim() || 'Pescadería Batequis';
+
+      const textoFormateado = `Banco: ${nombreLimpio}\nTarjeta: ${tarjetaLimpia}\nCLABE: ${clabeLimpia}\nTitular: ${titularLimpio}`;
+
       await setDoc(doc(db, 'configuracion', 'general'), {
-        datosBancarios: nuevoBancoInput.trim()
+        bancoNombre: nombreLimpio,
+        bancoTarjeta: tarjetaLimpia,
+        bancoClabe: clabeLimpia,
+        bancoTitular: titularLimpio,
+        datosBancarios: textoFormateado
       }, { merge: true });
+
+      setBancoNombre(nombreLimpio);
+      setBancoTarjeta(tarjetaLimpia);
+      setBancoClabe(clabeLimpia);
+      setBancoTitular(titularLimpio);
+      setDatosBancarios(textoFormateado);
+
       setModalEditarBanco(false);
       mostrarAviso('Guardado', 'Datos bancarios actualizados correctamente.', 'exito');
     } catch (error) {
@@ -965,13 +1073,12 @@ export default function App() {
 
                     <TouchableOpacity
                       style={styles.btnConfigItem}
-                      onPress={() => {
-                        setNuevoBancoInput(datosBancarios);
-                        setModalEditarBanco(true);
-                      }}
+                      onPress={handleAbrirEditarBanco}
                     >
-                      <Text style={styles.btnConfigItemTitle}>💳 Datos para Transferencia</Text>
-                      <Text style={styles.btnConfigItemValue} numberOfLines={1}>{datosBancarios.split('\n')[0]}</Text>
+                      <Text style={styles.btnConfigItemTitle}>💳 Datos para Transferencia (Tarjeta, CLABE, Titular)</Text>
+                      <Text style={styles.btnConfigItemValue} numberOfLines={1}>
+                        {datosBancariosEstructurados.banco} • {datosBancariosEstructurados.titular}
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -1203,7 +1310,7 @@ export default function App() {
             </View>
           )}
 
-          {/* SECCIÓN 4: FORMA DE PAGO */}
+          {/* SECCIÓN 4: FORMA DE PAGO CON COPIADO INDIVIDUAL DE DATOS BANCARIOS */}
           <View style={styles.contentCard}>
             <View style={styles.cardHeaderWithIcon}>
               <Text style={styles.cardHeaderIcon}>💳</Text>
@@ -1233,24 +1340,123 @@ export default function App() {
                 <Text style={[styles.paymentMethodTitle, metodoPago === 'transferencia' && styles.paymentMethodTitleActive]}>
                   Transferencia
                 </Text>
-                <Text style={styles.paymentMethodDesc}>Envías comprobante</Text>
+                <Text style={styles.paymentMethodDesc}>Copia los datos abajo</Text>
               </TouchableOpacity>
             </View>
 
             {metodoPago === 'transferencia' && (
-              <View style={styles.bankInfoContainer}>
-                <View style={styles.bankInfoHeader}>
-                  <Text style={styles.bankInfoTitle}>🏦 Cuenta para Transferencia:</Text>
-                  <TouchableOpacity
-                    style={styles.btnCopyBank}
-                    onPress={() => copiarAlPortapapeles(datosBancarios, 'Datos bancarios copiados')}
-                  >
-                    <Text style={styles.btnCopyBankText}>📋 Copiar Datos</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.bankInfoText}>{datosBancarios}</Text>
+              <View style={styles.bankCardStructured}>
+                <Text style={styles.bankCardStructuredHeading}>
+                  🏦 Datos para Transferencia Bancaria
+                </Text>
+                <Text style={styles.bankCardStructuredSub}>
+                  Toca "Copiar" en el dato específico que necesites:
+                </Text>
+
+                {/* CAMPO 1: BANCO */}
+                {Boolean(datosBancariosEstructurados.banco) && (
+                  <View style={styles.bankFieldRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bankFieldLabel}>BANCO DESTINO</Text>
+                      <Text style={styles.bankFieldValue}>{datosBancariosEstructurados.banco}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.btnCopySingle, campoCopiado === 'banco' && styles.btnCopySingleActive]}
+                      onPress={() => copiarAlPortapapeles(datosBancariosEstructurados.banco, 'Banco copiado', 'banco')}
+                    >
+                      <Text style={[styles.btnCopySingleText, campoCopiado === 'banco' && styles.btnCopySingleTextActive]}>
+                        {campoCopiado === 'banco' ? '✓ Copiado' : '📋 Copiar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* CAMPO 2: NÚMERO DE TARJETA */}
+                {Boolean(datosBancariosEstructurados.tarjeta) && (
+                  <View style={styles.bankFieldRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bankFieldLabel}>NÚMERO DE TARJETA</Text>
+                      <Text style={styles.bankFieldDigits}>{datosBancariosEstructurados.tarjeta}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.btnCopySingle, campoCopiado === 'tarjeta' && styles.btnCopySingleActive]}
+                      onPress={() =>
+                        copiarAlPortapapeles(
+                          datosBancariosEstructurados.tarjeta.replace(/\s+/g, ''),
+                          'Número de tarjeta copiado',
+                          'tarjeta'
+                        )
+                      }
+                    >
+                      <Text style={[styles.btnCopySingleText, campoCopiado === 'tarjeta' && styles.btnCopySingleTextActive]}>
+                        {campoCopiado === 'tarjeta' ? '✓ Copiado' : '📋 Copiar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* CAMPO 3: CLABE INTERBANCARIA */}
+                {Boolean(datosBancariosEstructurados.clabe) && (
+                  <View style={styles.bankFieldRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bankFieldLabel}>CLABE INTERBANCARIA (SPEI)</Text>
+                      <Text style={styles.bankFieldDigits}>{datosBancariosEstructurados.clabe}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.btnCopySingle, campoCopiado === 'clabe' && styles.btnCopySingleActive]}
+                      onPress={() =>
+                        copiarAlPortapapeles(
+                          datosBancariosEstructurados.clabe.replace(/\s+/g, ''),
+                          'CLABE copiada',
+                          'clabe'
+                        )
+                      }
+                    >
+                      <Text style={[styles.btnCopySingleText, campoCopiado === 'clabe' && styles.btnCopySingleTextActive]}>
+                        {campoCopiado === 'clabe' ? '✓ Copiado' : '📋 Copiar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* CAMPO 4: TITULAR */}
+                {Boolean(datosBancariosEstructurados.titular) && (
+                  <View style={styles.bankFieldRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bankFieldLabel}>TITULAR DE LA CUENTA</Text>
+                      <Text style={styles.bankFieldValue}>{datosBancariosEstructurados.titular}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.btnCopySingle, campoCopiado === 'titular' && styles.btnCopySingleActive]}
+                      onPress={() =>
+                        copiarAlPortapapeles(datosBancariosEstructurados.titular, 'Titular copiado', 'titular')
+                      }
+                    >
+                      <Text style={[styles.btnCopySingleText, campoCopiado === 'titular' && styles.btnCopySingleTextActive]}>
+                        {campoCopiado === 'titular' ? '✓ Copiado' : '📋 Copiar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* BOTÓN EXTRA: COPIAR TODOS LOS DATOS JUNTOS */}
+                <TouchableOpacity
+                  style={[styles.btnCopyAllBank, campoCopiado === 'todo' && styles.btnCopySingleActive]}
+                  onPress={() =>
+                    copiarAlPortapapeles(
+                      `Banco: ${datosBancariosEstructurados.banco}\nTarjeta: ${datosBancariosEstructurados.tarjeta}\nCLABE: ${datosBancariosEstructurados.clabe}\nTitular: ${datosBancariosEstructurados.titular}`,
+                      'Resumen bancario completo copiado',
+                      'todo'
+                    )
+                  }
+                >
+                  <Text style={[styles.btnCopyAllBankText, campoCopiado === 'todo' && styles.btnCopySingleTextActive]}>
+                    {campoCopiado === 'todo' ? '✓ ¡Todos los Datos Copiados!' : '📑 Copiar Resumen Completo'}
+                  </Text>
+                </TouchableOpacity>
+
                 <Text style={styles.bankInfoNote}>
-                  📌 Al enviar tu pedido por WhatsApp, adjunta tu comprobante de pago para procesarlo de inmediato.
+                  📌 Recuerda adjuntar tu comprobante de pago al enviar el pedido por WhatsApp.
                 </Text>
               </View>
             )}
@@ -1717,7 +1923,7 @@ export default function App() {
                 placeholder="Ej. Kg, Pieza"
                 placeholderTextColor="#94a3b8"
                 value={unidadNuevoProd}
-                onChangeText={setUnidadNuevoProd}
+                onChangeText={setNombreNuevoProd}
               />
             </View>
 
@@ -1801,7 +2007,7 @@ export default function App() {
       </Modal>
 
       {/* =========================================================================
-          MODAL 8: EDITAR DATOS BANCARIOS (ADMIN)
+          MODAL 8: EDITAR DATOS BANCARIOS ESTRUCTURADOS (ADMIN)
          ========================================================================= */}
       <Modal visible={modalEditarBanco} animationType="fade" transparent={true}>
         <View style={styles.modalBackdrop}>
@@ -1812,18 +2018,58 @@ export default function App() {
                 <Text style={styles.modalCloseIcon}>✕</Text>
               </TouchableOpacity>
             </View>
+            <Text style={styles.modalDialogSub}>
+              Configura los datos para que el cliente pueda copiarlos por separado
+            </Text>
 
-            <TextInput
-              style={[styles.textInputModern, { height: 110, textAlignVertical: 'top' }]}
-              multiline
-              placeholder="Banco, Tarjeta, CLABE, Titular..."
-              placeholderTextColor="#94a3b8"
-              value={nuevoBancoInput}
-              onChangeText={setNuevoBancoInput}
-            />
+            <View style={styles.formGroup}>
+              <Text style={styles.inputLabel}>Banco Destino:</Text>
+              <TextInput
+                style={styles.textInputModern}
+                placeholder="Ej. BBVA, Santander, Banorte"
+                placeholderTextColor="#94a3b8"
+                value={inputBancoNombre}
+                onChangeText={setInputBancoNombre}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.inputLabel}>Número de Tarjeta (16 dígitos):</Text>
+              <TextInput
+                style={styles.textInputModern}
+                placeholder="Ej. 1234 5678 9012 3456"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                value={inputBancoTarjeta}
+                onChangeText={setInputBancoTarjeta}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.inputLabel}>CLABE Interbancaria (18 dígitos):</Text>
+              <TextInput
+                style={styles.textInputModern}
+                placeholder="Ej. 012180012345678901"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                value={inputBancoClabe}
+                onChangeText={setInputBancoClabe}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.inputLabel}>Titular de la Cuenta:</Text>
+              <TextInput
+                style={styles.textInputModern}
+                placeholder="Ej. Pescadería Batequis"
+                placeholderTextColor="#94a3b8"
+                value={inputBancoTitular}
+                onChangeText={setInputBancoTitular}
+              />
+            </View>
 
             <TouchableOpacity style={styles.btnModalPrimary} onPress={handleGuardarBanco}>
-              <Text style={styles.btnModalPrimaryText}>Guardar Información</Text>
+              <Text style={styles.btnModalPrimaryText}>Guardar Datos Bancarios</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnSecondaryCancel} onPress={() => setModalEditarBanco(false)}>
               <Text style={styles.btnSecondaryCancelText}>Cancelar</Text>
@@ -2584,46 +2830,95 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
-  bankInfoContainer: {
+
+  // --- TARJETA BANCARIA ESTRUCTURADA CON COPIADO INDIVIDUAL ---
+  bankCardStructured: {
     backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    marginTop: 4,
   },
-  bankInfoHeader: {
+  bankCardStructuredHeading: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  bankCardStructuredSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginBottom: 10,
+  },
+  bankFieldRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  bankInfoTitle: {
-    fontSize: 12,
+  bankFieldLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.5,
+  },
+  bankFieldValue: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#0f172a',
+    marginTop: 1,
   },
-  btnCopyBank: {
+  bankFieldDigits: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0284c7',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginTop: 1,
+    letterSpacing: 0.5,
+  },
+  btnCopySingle: {
     backgroundColor: '#e0f2fe',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 8,
   },
-  btnCopyBankText: {
+  btnCopySingleActive: {
+    backgroundColor: '#dcfce7',
+  },
+  btnCopySingleText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#0284c7',
   },
-  bankInfoText: {
+  btnCopySingleTextActive: {
+    color: '#15803d',
+  },
+  btnCopyAllBank: {
+    backgroundColor: '#f1f5f9',
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  btnCopyAllBankText: {
     fontSize: 12,
-    color: '#334155',
-    lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    marginBottom: 6,
+    fontWeight: '700',
+    color: '#475569',
   },
   bankInfoNote: {
     fontSize: 11,
     color: '#64748b',
     fontStyle: 'italic',
+    textAlign: 'center',
   },
 
   // --- SELECTOR DE HORA TRIGGER ---
