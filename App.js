@@ -49,6 +49,15 @@ const HORAS_JORNADA = [
 
 const MINUTOS_INTERVALOS = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 
+// Helper para obtener fecha de hoy en formato local YYYY-MM-DD
+const obtenerFechaHoyStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function App() {
   // --- AUTENTICACIÓN ADMIN ---
   const [isAdmin, setIsAdmin] = useState(false);
@@ -58,7 +67,7 @@ export default function App() {
 
   // --- DATOS EN TIEMPO REAL (FIRESTORE) ---
   const [productos, setProductos] = useState([]);
-  const [horariosOcupadosDocs, setHorariosOcupadosDocs] = useState([]); // [{ id, hora, cliente, fechaRegistro }]
+  const [horariosOcupadosDocs, setHorariosOcupadosDocs] = useState([]); // Solo turnos del día de hoy
   const [telefonoContacto, setTelefonoContacto] = useState('6681234567');
   const [datosBancarios, setDatosBancarios] = useState(
     'Banco: BBVA\nTarjeta: 1234 5678 9012 3456\nCLABE: 012180012345678901\nTitular: Pescadería Batequis'
@@ -70,6 +79,22 @@ export default function App() {
   const [horaCierre, setHoraCierre] = useState(17);    // 5 PM
   const [modoForzadoEstado, setModoForzadoEstado] = useState('auto'); // 'auto', 'abierto', 'cerrado'
   const [estaAbierto, setEstaAbierto] = useState(true);
+
+  // --- RELOJ EN TIEMPO REAL (MINUTOS DEL DÍA DESDE MEDIANOCHE) ---
+  const [minutosActualesDelDia, setMinutosActualesDelDia] = useState(() => {
+    const ahora = new Date();
+    return ahora.getHours() * 60 + ahora.getMinutes();
+  });
+
+  useEffect(() => {
+    const tickReloj = () => {
+      const ahora = new Date();
+      setMinutosActualesDelDia(ahora.getHours() * 60 + ahora.getMinutes());
+    };
+    tickReloj();
+    const intervalId = setInterval(tickReloj, 15000); // Se actualiza cada 15 segundos
+    return () => clearInterval(intervalId);
+  }, []);
 
   // --- DATOS DEL CLIENTE E HISTORIAL ---
   const [nombreCliente, setNombreCliente] = useState('');
@@ -88,7 +113,7 @@ export default function App() {
   const [unidadSeleccionada, setUnidadSeleccionada] = useState('Kg');
   const [metodoPago, setMetodoPago] = useState('efectivo');
 
-  // --- SELECTOR DE HORARIO ---
+  // --- SELECTOR DE HORARIO DINÁMICO ---
   const [horaSeleccionada, setHoraSeleccionada] = useState(null);
   const [modalHoraVisible, setModalHoraVisible] = useState(false);
   const [horaBloqueActivo, setHoraBloqueActivo] = useState(HORAS_JORNADA[0]);
@@ -98,7 +123,7 @@ export default function App() {
   const [ticketActual, setTicketActual] = useState(null);
   const [copiadoFeedback, setCopiadoFeedback] = useState(false);
 
-  // --- NOTIFICACIÓN PERSONALIZADA (REEMPLAZO UNIVERSAL DE Alert.alert) ---
+  // --- NOTIFICACIÓN PERSONALIZADA ---
   const [alertaModal, setAlertaModal] = useState({ visible: false, titulo: '', mensaje: '', tipo: 'info' });
 
   // --- PANEL DE ADMINISTRACIÓN ---
@@ -150,19 +175,35 @@ export default function App() {
     return () => unsubscribeProductos();
   }, []);
 
-  // 3. Escuchar horarios ocupados
+  // 3. Escuchar horarios ocupados con LIBERACIÓN AUTOMÁTICA DE DÍAS ANTERIORES
   useEffect(() => {
+    const hoyStr = obtenerFechaHoyStr();
     const unsubscribeHorarios = onSnapshot(collection(db, 'horarios_ocupados'), (snapshot) => {
-      const listaHorarios = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setHorariosOcupadosDocs(listaHorarios);
+      const listaHoy = [];
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        const esDeHoy = data.fecha
+          ? data.fecha === hoyStr
+          : data.fechaRegistro
+            ? data.fechaRegistro.startsWith(hoyStr)
+            : false;
+
+        if (esDeHoy) {
+          listaHoy.push({
+            id: docSnap.id,
+            ...data
+          });
+        } else {
+          // Si el horario es de días anteriores, se libera y elimina automáticamente de Firestore
+          deleteDoc(doc(db, 'horarios_ocupados', docSnap.id)).catch(() => {});
+        }
+      });
+      setHorariosOcupadosDocs(listaHoy);
     });
     return () => unsubscribeHorarios();
   }, []);
 
-  // Lista simple de horas ocupadas para el selector
+  // Lista simple de horas ocupadas exclusivamente para hoy
   const listaHorasOcupadas = useMemo(() => {
     return horariosOcupadosDocs.map((item) => item.hora);
   }, [horariosOcupadosDocs]);
@@ -240,6 +281,78 @@ export default function App() {
     mostrarAviso('¡Pedido Cargado!', 'Se han cargado los productos de tu pedido anterior en el carrito.', 'exito');
   };
 
+  // =========================================================================
+  // LÓGICA DINÁMICA: OCULTAR HORAS Y MINUTOS PASADOS SEGÚN LA HORA DEL DÍA
+  // =========================================================================
+
+  // Minutos disponibles en el futuro para una hora dada (con margen de 5 min)
+  const obtenerMinutosDisponibles = (itemHora) => {
+    if (!itemHora) return [];
+    return MINUTOS_INTERVALOS.filter((minStr) => {
+      const minEntero = parseInt(minStr, 10);
+      const totalMinutosTurno = itemHora.hora24 * 60 + minEntero;
+      // Solo turnos que estén al menos 5 minutos en el futuro
+      return totalMinutosTurno > (minutosActualesDelDia + 5);
+    });
+  };
+
+  // Horas del día que aún tienen minutos disponibles y están en horario comercial
+  const horasDisponiblesHoy = useMemo(() => {
+    return HORAS_JORNADA.filter((item) => {
+      // 1. Debe estar dentro del horario de atención
+      if (item.hora24 < horaApertura || item.hora24 >= horaCierre) {
+        return false;
+      }
+      // 2. Debe tener al menos un minuto disponible en el futuro
+      const minutosFuturos = obtenerMinutosDisponibles(item);
+      return minutosFuturos.length > 0;
+    });
+  }, [horaApertura, horaCierre, minutosActualesDelDia]);
+
+  // Minutos disponibles para la hora que el usuario tiene abierta en el selector
+  const minutosDisponiblesBloque = useMemo(() => {
+    if (!horaBloqueActivo) return [];
+    return obtenerMinutosDisponibles(horaBloqueActivo);
+  }, [horaBloqueActivo, minutosActualesDelDia]);
+
+  // Si la hora activa ya expiró o no está en la lista de horas válidas, mover al primer bloque disponible
+  useEffect(() => {
+    if (horasDisponiblesHoy.length > 0) {
+      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      if (!sigueValida) {
+        setHoraBloqueActivo(horasDisponiblesHoy[0]);
+      }
+    }
+  }, [horasDisponiblesHoy, horaBloqueActivo]);
+
+  // Si la hora que el usuario ya tenía seleccionada pasa al pasado mientras usa la app, deseleccionarla
+  useEffect(() => {
+    if (horaSeleccionada) {
+      const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        const totalMin = h * 60 + m;
+        if (totalMin <= (minutosActualesDelDia + 5)) {
+          setHoraSeleccionada(null);
+        }
+      }
+    }
+  }, [minutosActualesDelDia, horaSeleccionada]);
+
+  const abrirModalHora = () => {
+    if (horasDisponiblesHoy.length > 0) {
+      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      if (!sigueValida) {
+        setHoraBloqueActivo(horasDisponiblesHoy[0]);
+      }
+    }
+    setModalHoraVisible(true);
+  };
+
   // --- FILTRADO DE PRODUCTOS ---
   const productosFiltrados = useMemo(() => {
     return productos.filter((prod) => {
@@ -251,7 +364,7 @@ export default function App() {
     });
   }, [productos, busquedaProducto, filtroDisponibilidad]);
 
-  // --- SUBTOTOTAl Y CARRITO ---
+  // --- SUBTOTAL Y CARRITO ---
   const abrirModalSeleccion = (producto) => {
     setProductoSeleccionado(producto);
     setCantidadInput('');
@@ -303,7 +416,6 @@ export default function App() {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(texto);
       } else {
-        // En plataformas móviles si no hay Clipboard nativo instalado, creamos un input temporal en web
         if (typeof document !== 'undefined') {
           const tempInput = document.createElement('textarea');
           tempInput.value = texto;
@@ -321,11 +433,10 @@ export default function App() {
     }
   };
 
-  // --- APERTURA ROBUSTA DE WHATSAPP (SOLUCIÓN WEB/PWA Y NATIVE) ---
+  // --- APERTURA ROBUSTA DE WHATSAPP ---
   const abrirWhatsAppConMensaje = (urlWhatsApp) => {
     if (Platform.OS === 'web') {
       try {
-        // En Web / PWA, abrimos en una nueva pestaña o redirigimos de inmediato
         const win = window.open(urlWhatsApp, '_blank');
         if (!win || win.closed || typeof win.closed === 'undefined') {
           window.location.href = urlWhatsApp;
@@ -368,12 +479,14 @@ export default function App() {
     }
 
     try {
-      // 1. Guardar hora ocupada en Firestore
+      const hoyStr = obtenerFechaHoyStr();
+      // 1. Guardar hora ocupada en Firestore vinculada a la fecha de hoy
       await addDoc(collection(db, 'horarios_ocupados'), {
         hora: horaSeleccionada,
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim() || 'No proporcionado',
         total: calcularTotalCarrito(),
+        fecha: hoyStr,
         fechaRegistro: new Date().toISOString()
       });
 
@@ -381,12 +494,12 @@ export default function App() {
       const folio = 'PB-' + Math.floor(1000 + Math.random() * 9000);
       const total = calcularTotalCarrito();
       const metodoPagoTexto = metodoPago === 'transferencia' ? '💳 Transferencia Bancaria' : '💵 Efectivo en Sucursal';
-      const fechaHoy = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const fechaHoyFormateada = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
       // 3. Guardar en historial local del dispositivo
       const registroLocal = {
         folio: folio,
-        fecha: fechaHoy,
+        fecha: fechaHoyFormateada,
         nombreCliente: nombreCliente.trim(),
         telefonoCliente: telefonoCliente.trim(),
         total: total,
@@ -396,7 +509,7 @@ export default function App() {
       };
       await guardarPedidoEnHistorial(registroLocal);
 
-      // 4. Construir formato de texto para WhatsApp con formato estructurado
+      // 4. Construir formato de texto para WhatsApp
       const lineasProductos = carrito.map((item) => {
         const detalleCantidad = item.unidad === 'Pesos'
           ? `$${item.cantidad} MXN`
@@ -409,7 +522,7 @@ export default function App() {
       const mensajeWhatsApp =
         `🐟 *PESCADERÍA BATEQUIS* 🐟\n` +
         `🧾 *FOLIO:* #${folio}\n` +
-        `📅 *FECHA:* ${fechaHoy}\n` +
+        `📅 *FECHA:* ${fechaHoyFormateada}\n` +
         `⏰ *HORA RECOLECCIÓN:* ${horaSeleccionada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `👤 *CLIENTE:* ${nombreCliente.trim()}${contactoTexto}\n` +
@@ -431,7 +544,7 @@ export default function App() {
       // 5. Crear objeto de Ticket Digital
       const ticketData = {
         folio: folio,
-        fecha: fechaHoy,
+        fecha: fechaHoyFormateada,
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim(),
         hora: horaSeleccionada,
@@ -553,6 +666,18 @@ export default function App() {
     }
   };
 
+  const handleLimpiarTodosLosHorariosHoy = async () => {
+    try {
+      const promesas = horariosOcupadosDocs.map((hor) =>
+        deleteDoc(doc(db, 'horarios_ocupados', hor.id))
+      );
+      await Promise.all(promesas);
+      mostrarAviso('Turnos Reiniciados', 'Todos los turnos de hoy han sido liberados.', 'exito');
+    } catch (error) {
+      mostrarAviso('Error', 'No se pudieron reiniciar los turnos.', 'error');
+    }
+  };
+
   const cambiarModoEstadoAdmin = async (nuevoModo) => {
     try {
       await setDoc(doc(db, 'configuracion', 'general'), {
@@ -642,7 +767,7 @@ export default function App() {
 
       {/* CONTENEDOR PRINCIPAL RESPONSIVE */}
       <View style={styles.appContainer}>
-        {/* ENCABEZADO PREMIUM */}
+        {/* ENCABEZADO */}
         <View style={styles.header}>
           <View style={styles.headerBrand}>
             <View style={styles.headerLogoBadge}>
@@ -711,7 +836,7 @@ export default function App() {
                   onPress={() => setAdminTab('horarios')}
                 >
                   <Text style={[styles.adminTabBtnText, adminTab === 'horarios' && styles.adminTabBtnTextActive]}>
-                    ⏰ Turnos ({horariosOcupadosDocs.length})
+                    ⏰ Turnos Hoy ({horariosOcupadosDocs.length})
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -739,18 +864,37 @@ export default function App() {
                 </View>
               )}
 
-              {/* TAB 2: GESTIÓN DE HORARIOS RESERVADOS */}
+              {/* TAB 2: GESTIÓN DE HORARIOS RESERVADOS DE HOY */}
               {adminTab === 'horarios' && (
                 <View style={styles.adminTabContent}>
-                  <Text style={styles.adminSubSectionTitle}>Horarios Reservados de Hoy:</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={styles.adminSubSectionTitle}>
+                      Turnos Reservados de Hoy ({horariosOcupadosDocs.length}):
+                    </Text>
+                    {horariosOcupadosDocs.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.btnLimpiarTodoTurnos}
+                        onPress={handleLimpiarTodosLosHorariosHoy}
+                      >
+                        <Text style={styles.btnLimpiarTodoTurnosText}>🧹 Resetear Todos</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <Text style={styles.adminHorariosSubNote}>
+                    ✨ Todos los turnos se liberan automáticamente cada nuevo día sin intervención.
+                  </Text>
+
                   {horariosOcupadosDocs.length === 0 ? (
-                    <Text style={styles.emptyNoticeText}>No hay horarios ocupados registrados.</Text>
+                    <Text style={styles.emptyNoticeText}>No hay turnos ocupados para el día de hoy.</Text>
                   ) : (
                     horariosOcupadosDocs.map((hor) => (
                       <View key={hor.id} style={styles.horarioRowAdmin}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.horarioHoraText}>{hor.hora}</Text>
-                          <Text style={styles.horarioClienteText}>Cliente: {hor.cliente || 'Sin nombre'}</Text>
+                          <Text style={styles.horarioClienteText}>
+                            Cliente: {hor.cliente || 'Sin nombre'} {hor.telefono ? `(${hor.telefono})` : ''}
+                          </Text>
                         </View>
                         <TouchableOpacity
                           style={styles.btnLiberarTurno}
@@ -815,7 +959,7 @@ export default function App() {
                         setModalEditarHorarios(true);
                       }}
                     >
-                      <Text style={styles.btnConfigItemTitle}>⏰ Horario de Apertura</Text>
+                      <Text style={styles.btnConfigItemTitle}>⏰ Horario de Atención</Text>
                       <Text style={styles.btnConfigItemValue}>{horaApertura}:00 hrs a {horaCierre}:00 hrs</Text>
                     </TouchableOpacity>
 
@@ -1112,7 +1256,7 @@ export default function App() {
             )}
           </View>
 
-          {/* SECCIÓN 5: HORA DE RECOLECCIÓN */}
+          {/* SECCIÓN 5: HORA DE RECOLECCIÓN (DINÁMICA) */}
           <View style={styles.contentCard}>
             <View style={styles.cardHeaderWithIcon}>
               <Text style={styles.cardHeaderIcon}>⏰</Text>
@@ -1124,12 +1268,16 @@ export default function App() {
 
             <TouchableOpacity
               style={[styles.timeSelectorTrigger, horaSeleccionada && styles.timeSelectorTriggerActive]}
-              onPress={() => setModalHoraVisible(true)}
+              onPress={abrirModalHora}
             >
               <View style={styles.timeSelectorTriggerLeft}>
                 <Text style={styles.timeSelectorEmoji}>🕒</Text>
                 <Text style={[styles.timeSelectorText, horaSeleccionada && styles.timeSelectorTextActive]}>
-                  {horaSeleccionada ? `Hora Elegida: ${horaSeleccionada}` : 'Toca para elegir tu hora (Intervalos de 5 min)'}
+                  {horaSeleccionada
+                    ? `Hora Elegida: ${horaSeleccionada}`
+                    : horasDisponiblesHoy.length > 0
+                      ? 'Toca para elegir tu hora (Intervalos de 5 min)'
+                      : 'Sin turnos disponibles por hoy'}
                 </Text>
               </View>
               <Text style={styles.timeSelectorArrow}>▼</Text>
@@ -1159,7 +1307,7 @@ export default function App() {
       </View>
 
       {/* =========================================================================
-          MODAL 1: TICKET DIGITAL Y ENVÍO A WHATSAPP (SOLUCIÓN DEFINITIVA WEB/PWA)
+          MODAL 1: TICKET DIGITAL Y ENVÍO A WHATSAPP
          ========================================================================= */}
       <Modal visible={modalTicketVisible} animationType="slide" transparent={true}>
         <View style={styles.modalBackdrop}>
@@ -1232,9 +1380,8 @@ export default function App() {
                 </Text>
               </View>
 
-              {/* BOTONES DE ACCIÓN (WHATSAPP DIRECTO + COPIAR) */}
+              {/* BOTONES DE ACCIÓN */}
               <View style={styles.ticketActionsContainer}>
-                {/* BOTÓN PRIMARIO: ENVIAR POR WHATSAPP (ACCION DIRECTA DE CLIC) */}
                 <TouchableOpacity
                   style={styles.btnActionWhatsAppPrimary}
                   onPress={() => abrirWhatsAppConMensaje(ticketActual?.urlWhatsApp)}
@@ -1247,7 +1394,6 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
 
-                {/* BOTÓN SECUNDARIO: COPIAR DETALLES */}
                 <TouchableOpacity
                   style={styles.btnActionCopyDetails}
                   onPress={() => copiarAlPortapapeles(ticketActual?.mensajeCompleto, 'Resumen del pedido copiado')}
@@ -1257,7 +1403,6 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
 
-                {/* FINALIZAR Y CERRAR */}
                 <TouchableOpacity
                   style={styles.btnCloseTicketModal}
                   onPress={() => setModalTicketVisible(false)}
@@ -1271,7 +1416,7 @@ export default function App() {
       </Modal>
 
       {/* =========================================================================
-          MODAL 2: SELECTOR DE HORA (INTERVALOS DE 5 MINUTOS)
+          MODAL 2: SELECTOR DE HORA DINÁMICO (FILTRADO DE HORAS Y MINUTOS PASADOS)
          ========================================================================= */}
       <Modal visible={modalHoraVisible} animationType="slide" transparent={true}>
         <View style={styles.modalBackdrop}>
@@ -1282,70 +1427,82 @@ export default function App() {
                 <Text style={styles.modalCloseIcon}>✕</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalDialogSub}>Turnos de preparación cada 5 minutos</Text>
+            <Text style={styles.modalDialogSub}>Turnos disponibles en tiempo real (Intervalos de 5 min)</Text>
 
-            {/* SELECCIÓN DE HORA BASE */}
-            <Text style={styles.stepSubtitle}>1. Elige la Hora:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalHoursScroll}>
-              {HORAS_JORNADA.map((item) => {
-                const esActiva = horaBloqueActivo.horaStr === item.horaStr;
-                return (
-                  <TouchableOpacity
-                    key={item.horaStr}
-                    style={[styles.hourPill, esActiva && styles.hourPillActive]}
-                    onPress={() => setHoraBloqueActivo(item)}
-                  >
-                    <Text style={[styles.hourPillText, esActiva && styles.hourPillTextActive]}>
-                      {item.horaStr} {item.ampm}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            {horasDisponiblesHoy.length === 0 ? (
+              <View style={styles.noHoursBox}>
+                <Text style={styles.noHoursEmoji}>⏰</Text>
+                <Text style={styles.noHoursTitle}>No hay turnos disponibles por hoy</Text>
+                <Text style={styles.noHoursSub}>
+                  Los horarios de recolección para el día de hoy ya concluyeron. Nuestro horario de atención es de {horaApertura}:00 a {horaCierre}:00 hrs.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* 1. SELECCIÓN DE HORA BASE (SOLO HORAS EN EL FUTURO) */}
+                <Text style={styles.stepSubtitle}>1. Elige la Hora:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalHoursScroll}>
+                  {horasDisponiblesHoy.map((item) => {
+                    const esActiva = horaBloqueActivo?.horaStr === item.horaStr;
+                    return (
+                      <TouchableOpacity
+                        key={item.horaStr}
+                        style={[styles.hourPill, esActiva && styles.hourPillActive]}
+                        onPress={() => setHoraBloqueActivo(item)}
+                      >
+                        <Text style={[styles.hourPillText, esActiva && styles.hourPillTextActive]}>
+                          {item.horaStr} {item.ampm}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
 
-            {/* SELECCIÓN DE MINUTOS */}
-            <Text style={styles.stepSubtitle}>
-              2. Minutos para las {horaBloqueActivo.horaStr} {horaBloqueActivo.ampm}:
-            </Text>
-            <View style={styles.minutesGrid}>
-              {MINUTOS_INTERVALOS.map((min) => {
-                const horaStringCompleta = `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`;
-                const estaOcupado = listaHorasOcupadas.includes(horaStringCompleta);
-                const estaSeleccionado = horaSeleccionada === horaStringCompleta;
+                {/* 2. SELECCIÓN DE MINUTOS (SOLO MINUTOS EN EL FUTURO) */}
+                <Text style={styles.stepSubtitle}>
+                  2. Minutos disponibles para las {horaBloqueActivo?.horaStr} {horaBloqueActivo?.ampm}:
+                </Text>
+                <View style={styles.minutesGrid}>
+                  {minutosDisponiblesBloque.map((min) => {
+                    const horaStringCompleta = `${horaBloqueActivo.horaStr}:${min} ${horaBloqueActivo.ampm}`;
+                    const estaOcupado = listaHorasOcupadas.includes(horaStringCompleta);
+                    const estaSeleccionado = horaSeleccionada === horaStringCompleta;
 
-                return (
-                  <TouchableOpacity
-                    key={min}
-                    disabled={estaOcupado}
-                    style={[
-                      styles.minuteBtn,
-                      estaOcupado && styles.minuteBtnOccupied,
-                      estaSeleccionado && styles.minuteBtnSelected
-                    ]}
-                    onPress={() => {
-                      setHoraSeleccionada(horaStringCompleta);
-                      setModalHoraVisible(false);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.minuteBtnText,
-                        estaOcupado && styles.minuteBtnTextOccupied,
-                        estaSeleccionado && styles.minuteBtnTextSelected
-                      ]}
-                    >
-                      {estaOcupado ? 'OCUPADO' : `:${min}`}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    return (
+                      <TouchableOpacity
+                        key={min}
+                        disabled={estaOcupado}
+                        style={[
+                          styles.minuteBtn,
+                          estaOcupado && styles.minuteBtnOccupied,
+                          estaSeleccionado && styles.minuteBtnSelected
+                        ]}
+                        onPress={() => {
+                          setHoraSeleccionada(horaStringCompleta);
+                          setModalHoraVisible(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.minuteBtnText,
+                            estaOcupado && styles.minuteBtnTextOccupied,
+                            estaSeleccionado && styles.minuteBtnTextSelected
+                          ]}
+                        >
+                          {estaOcupado ? 'OCUPADO' : `:${min}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             <TouchableOpacity
               style={styles.btnSecondaryCancel}
               onPress={() => setModalHoraVisible(false)}
             >
-              <Text style={styles.btnSecondaryCancelText}>Cerrar sin Cambios</Text>
+              <Text style={styles.btnSecondaryCancelText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1755,7 +1912,7 @@ export default function App() {
       </Modal>
 
       {/* =========================================================================
-          MODAL 11: AVISO / ALERTA INTEGRADA (COMPATIBLE CON WEB, PWA Y NATIVE)
+          MODAL 11: AVISO / ALERTA INTEGRADA
          ========================================================================= */}
       <Modal visible={alertaModal.visible} animationType="fade" transparent={true}>
         <View style={styles.modalBackdrop}>
@@ -1794,7 +1951,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
 
-  // --- HEADER PREMIUM ---
+  // --- HEADER ---
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1991,7 +2148,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#78350f',
+  },
+  adminHorariosSubNote: {
+    fontSize: 11,
+    color: '#16a34a',
+    fontWeight: '600',
     marginBottom: 8,
+  },
+  btnLimpiarTodoTurnos: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  btnLimpiarTodoTurnosText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#dc2626',
   },
   horarioRowAdmin: {
     flexDirection: 'row',
@@ -2076,7 +2249,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // --- TARJETAS DE CONTENIDO COMUNES ---
+  // --- TARJETAS COMUNES ---
   contentCard: {
     backgroundColor: '#ffffff',
     borderRadius: 14,
@@ -2793,6 +2966,32 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 440,
     maxHeight: '88%',
+  },
+  noHoursBox: {
+    backgroundColor: '#fff1f2',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+  },
+  noHoursEmoji: {
+    fontSize: 32,
+    marginBottom: 6,
+  },
+  noHoursTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#be123c',
+    textAlign: 'center',
+  },
+  noHoursSub: {
+    fontSize: 12,
+    color: '#9f1239',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
   },
   stepSubtitle: {
     fontSize: 12,
