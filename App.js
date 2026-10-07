@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -146,6 +146,9 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, []);
 
+  // --- REFERENCIA PARA DESPLAZAMIENTO SUAVE ---
+  const mainScrollRef = useRef(null);
+
   // --- DATOS DEL CLIENTE E HISTORIAL ---
   const [nombreCliente, setNombreCliente] = useState('');
   const [telefonoCliente, setTelefonoCliente] = useState('');
@@ -154,6 +157,8 @@ export default function App() {
   // --- BÚSQUEDA Y FILTROS CLIENTE ---
   const [busquedaProducto, setBusquedaProducto] = useState('');
   const [filtroDisponibilidad, setFiltroDisponibilidad] = useState('todos'); // 'todos', 'disponibles'
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas'); // 'todas', 'preparados', 'camaron', 'pescado', 'pulpo', 'complementos'
+  const [notasPedido, setNotasPedido] = useState('');
 
   // --- ESTADO DEL CARRITO ---
   const [carrito, setCarrito] = useState([]);
@@ -185,6 +190,7 @@ export default function App() {
   const [nombreNuevoProd, setNombreNuevoProd] = useState('');
   const [precioNuevoProd, setPrecioNuevoProd] = useState('');
   const [unidadNuevoProd, setUnidadNuevoProd] = useState('Kg');
+  const [categoriaNuevoProd, setCategoriaNuevoProd] = useState('preparados');
 
   const [modalEditarPrecio, setModalEditarPrecio] = useState(false);
   const [productoAEditar, setProductoAEditar] = useState(null);
@@ -462,32 +468,128 @@ export default function App() {
     setModalHoraVisible(true);
   };
 
+  // --- DETECCIÓN INTELIGENTE DE CATEGORÍA ---
+  const obtenerCategoriaProducto = (prod) => {
+    if (prod.categoria) return prod.categoria;
+    const n = (prod.nombre || '').toLowerCase();
+    if (
+      n.includes('ceviche') ||
+      n.includes('atún') ||
+      n.includes('atun') ||
+      n.includes('preparado') ||
+      n.includes('aguachile') ||
+      n.includes('coctel') ||
+      n.includes('cóctel') ||
+      n.includes('torito') ||
+      n.includes('campechana') ||
+      n.includes('ensalada')
+    ) {
+      return 'preparados';
+    }
+    if (n.includes('camarón') || n.includes('camaron')) {
+      return 'camaron';
+    }
+    if (
+      n.includes('pescado') ||
+      n.includes('filete') ||
+      n.includes('posta') ||
+      n.includes('curvina') ||
+      n.includes('robalo') ||
+      n.includes('huachinango') ||
+      n.includes('lisa') ||
+      n.includes('mojarra') ||
+      n.includes('tilapia') ||
+      n.includes('cazón') ||
+      n.includes('cazon') ||
+      n.includes('salmón') ||
+      n.includes('salmon')
+    ) {
+      return 'pescado';
+    }
+    if (
+      n.includes('pulpo') ||
+      n.includes('calamar') ||
+      n.includes('callo') ||
+      n.includes('almeja') ||
+      n.includes('ostión') ||
+      n.includes('ostion') ||
+      n.includes('jaiba')
+    ) {
+      return 'pulpo';
+    }
+    if (
+      n.includes('salsa') ||
+      n.includes('limón') ||
+      n.includes('limon') ||
+      n.includes('tostada') ||
+      n.includes('galleta') ||
+      n.includes('empanizador') ||
+      n.includes('mayonesa')
+    ) {
+      return 'complementos';
+    }
+    return 'pescado';
+  };
+
+  const obtenerBadgeCategoria = (prod) => {
+    const cat = obtenerCategoriaProducto(prod);
+    switch (cat) {
+      case 'preparados':
+        return { label: '🥗 Listo para Comer', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' };
+      case 'camaron':
+        return { label: '🦐 Camarón Fresco', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
+      case 'pescado':
+        return { label: '🐟 Pescado del Día', bg: '#f0f9ff', color: '#0284c7', border: '#bae6fd' };
+      case 'pulpo':
+        return { label: '🐙 Especialidad', bg: '#faf5ff', color: '#7e22ce', border: '#e9d5ff' };
+      case 'complementos':
+        return { label: '🍋 Complemento', bg: '#fefce8', color: '#a16207', border: '#fef08a' };
+      default:
+        return { label: '🌊 Frescura Batequis', bg: '#f8fafc', color: '#475569', border: '#cbd5e1' };
+    }
+  };
+
+  // Turno más próximo estimado disponible (20-30 min)
+  const turnoMasProximo = useMemo(() => {
+    for (const h of horasDisponiblesHoy) {
+      const mins = obtenerMinutosDisponibles(h);
+      for (const m of mins) {
+        const turnoStr = `${h.horaStr}:${m} ${h.ampm}`;
+        if (!listaHorasOcupadas.includes(turnoStr)) {
+          return turnoStr;
+        }
+      }
+    }
+    return null;
+  }, [horasDisponiblesHoy, listaHorasOcupadas]);
+
   // --- FILTRADO DE PRODUCTOS ---
   const productosFiltrados = useMemo(() => {
     return productos.filter((prod) => {
       const coincideNombre = (prod.nombre || '').toLowerCase().includes(busquedaProducto.toLowerCase());
-      if (filtroDisponibilidad === 'disponibles') {
-        return coincideNombre && prod.disponible;
-      }
-      return coincideNombre;
+      const coincideDisp = filtroDisponibilidad === 'todos' || prod.disponible;
+      const catProd = obtenerCategoriaProducto(prod);
+      const coincideCat = categoriaFiltro === 'todas' || catProd === categoriaFiltro;
+      return coincideNombre && coincideDisp && coincideCat;
     });
-  }, [productos, busquedaProducto, filtroDisponibilidad]);
+  }, [productos, busquedaProducto, filtroDisponibilidad, categoriaFiltro]);
 
   // --- SUBTOTAL Y CARRITO ---
   const abrirModalSeleccion = (producto) => {
     setProductoSeleccionado(producto);
     setCantidadInput('');
-    setUnidadSeleccionada(producto.unidad === 'Pieza' ? 'Pieza' : 'Kg');
+    const unid = producto.unidad || 'Kg';
+    setUnidadSeleccionada(unid === 'Gramos' ? 'Gramos' : unid);
     setModalAgregarItem(true);
   };
 
   const calcularSubtotalItem = (precioBase, cantidad, unidad) => {
     const cant = parseFloat(cantidad) || 0;
     const prec = parseFloat(precioBase) || 0;
-    if (unidad === 'Kg' || unidad === 'Pieza') return cant * prec;
+    if (['Kg', 'Pieza', 'Litro', '1/2 Litro', 'Porción', 'Orden'].includes(unidad)) return cant * prec;
     if (unidad === 'Gramos') return (cant / 1000) * prec;
     if (unidad === 'Pesos') return cant;
-    return 0;
+    return cant * prec;
   };
 
   const handleAgregarAlCarrito = () => {
@@ -601,6 +703,7 @@ export default function App() {
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim() || 'No proporcionado',
         total: calcularTotalCarrito(),
+        notas: notasPedido.trim(),
         fecha: hoyStr,
         fechaRegistro: new Date().toISOString()
       });
@@ -628,6 +731,7 @@ export default function App() {
         telefonoCliente: telefonoCliente.trim(),
         total: total,
         hora: horaSeleccionada,
+        notas: notasPedido.trim(),
         metodoPago: metodoPagoTexto,
         carrito: [...carrito]
       };
@@ -642,6 +746,9 @@ export default function App() {
       }).join('\n');
 
       const contactoTexto = telefonoCliente.trim() ? `\n📞 *TEL:* ${telefonoCliente.trim()}` : '';
+      const notasTexto = notasPedido.trim()
+        ? `\n📝 *NOTAS DE PREPARACIÓN:*\n_${notasPedido.trim()}_\n━━━━━━━━━━━━━━━━━━━━━\n`
+        : '';
 
       const mensajeWhatsApp =
         `🐟 *PESCADERÍA BATEQUIS* 🐟\n` +
@@ -654,6 +761,7 @@ export default function App() {
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `🛒 *PRODUCTOS DEL PEDIDO:*\n` +
         `${lineasProductos}\n` +
+        notasTexto +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `💰 *TOTAL ESTIMADO:* $${total.toFixed(2)} MXN\n` +
         (metodoPago === 'transferencia' ? `📌 *Nota:* Te adjuntaré el comprobante de transferencia.\n` : '') +
@@ -672,6 +780,7 @@ export default function App() {
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim(),
         hora: horaSeleccionada,
+        notas: notasPedido.trim(),
         metodoPago: metodoPagoTexto,
         total: total,
         carrito: [...carrito],
@@ -685,6 +794,7 @@ export default function App() {
       // Limpiar formulario y carrito
       setCarrito([]);
       setHoraSeleccionada(null);
+      setNotasPedido('');
     } catch (error) {
       console.error(error);
       mostrarAviso('Error', 'Ocurrió un problema al reservar tu pedido. Por favor intenta de nuevo.', 'error');
@@ -769,7 +879,8 @@ export default function App() {
       await addDoc(collection(db, 'productos'), {
         nombre: nombreNuevoProd.trim(),
         precio: parseFloat(precioNuevoProd),
-        unidad: unidadNuevoProd,
+        unidad: unidadNuevoProd || 'Kg',
+        categoria: categoriaNuevoProd || 'preparados',
         disponible: true
       });
       setNombreNuevoProd('');
@@ -778,6 +889,21 @@ export default function App() {
       mostrarAviso('¡Producto Guardado!', 'El producto ya está disponible en el menú.', 'exito');
     } catch (error) {
       mostrarAviso('Error', 'No se pudo guardar el nuevo producto.', 'error');
+    }
+  };
+
+  const handleAgregarMuestraPreparados = async () => {
+    try {
+      await addDoc(collection(db, 'productos'), {
+        nombre: 'Ceviche de Atún Fresco',
+        precio: 160,
+        unidad: '1/2 Litro',
+        categoria: 'preparados',
+        disponible: true
+      });
+      mostrarAviso('¡Ceviche Agregado!', 'Se agregó "Ceviche de Atún Fresco" al menú.', 'exito');
+    } catch (error) {
+      mostrarAviso('Error', 'No se pudo agregar el producto.', 'error');
     }
   };
 
@@ -910,7 +1036,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#0369a1" />
+      <StatusBar barStyle="light-content" backgroundColor="#0c4a6e" />
 
       {/* CONTENEDOR PRINCIPAL RESPONSIVE */}
       <View style={styles.appContainer}>
@@ -1008,12 +1134,20 @@ export default function App() {
               {/* TAB 1: GESTIÓN DE PRODUCTOS */}
               {adminTab === 'catalogo' && (
                 <View style={styles.adminTabContent}>
-                  <TouchableOpacity
-                    style={styles.btnAdminPrimaryAction}
-                    onPress={() => setModalNuevoProducto(true)}
-                  >
-                    <Text style={styles.btnAdminPrimaryActionText}>➕ Agregar Nuevo Producto</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.btnAdminPrimaryAction, { flex: 1, marginBottom: 0 }]}
+                      onPress={() => setModalNuevoProducto(true)}
+                    >
+                      <Text style={styles.btnAdminPrimaryActionText}>➕ Agregar Producto</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.btnAdminSampleAction}
+                      onPress={handleAgregarMuestraPreparados}
+                    >
+                      <Text style={styles.btnAdminSampleActionText}>🥗 + Ceviche Atún</Text>
+                    </TouchableOpacity>
+                  </View>
                   <Text style={styles.adminTipText}>
                     💡 Puedes alternar rápidamente si un producto está agotado o disponible, editar su precio o retirarlo.
                   </Text>
@@ -1233,6 +1367,36 @@ export default function App() {
               )}
             </View>
 
+            {/* CATEGORÍAS PRINCIPALES DEL MENÚ */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryScrollContainer}
+              style={styles.categoryScrollView}
+            >
+              {[
+                { id: 'todas', label: '🌟 Todos' },
+                { id: 'preparados', label: '🥗 Preparados & Ceviches' },
+                { id: 'camaron', label: '🦐 Camarón' },
+                { id: 'pescado', label: '🐟 Pescados & Filetes' },
+                { id: 'pulpo', label: '🐙 Pulpo & Mariscos' },
+                { id: 'complementos', label: '🍋 Complementos' },
+              ].map((cat) => {
+                const activo = categoriaFiltro === cat.id;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.categoryPill, activo && styles.categoryPillActive]}
+                    onPress={() => setCategoriaFiltro(cat.id)}
+                  >
+                    <Text style={[styles.categoryPillText, activo && styles.categoryPillTextActive]}>
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
             <View style={styles.filtersRow}>
               <TouchableOpacity
                 style={[styles.filterChip, filtroDisponibilidad === 'todos' && styles.filterChipActive]}
@@ -1247,7 +1411,7 @@ export default function App() {
                 onPress={() => setFiltroDisponibilidad('disponibles')}
               >
                 <Text style={[styles.filterChipText, filtroDisponibilidad === 'disponibles' && styles.filterChipTextActive]}>
-                  Solo Disponibles
+                  ✓ Solo Disponibles
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1257,12 +1421,22 @@ export default function App() {
               <View style={styles.emptyStateBox}>
                 <Text style={styles.emptyStateEmoji}>🌊</Text>
                 <Text style={styles.emptyStateTitle}>No se encontraron productos</Text>
-                <Text style={styles.emptyStateSub}>Prueba con otro término de búsqueda.</Text>
+                <Text style={styles.emptyStateSub}>Prueba con otro término de búsqueda o selecciona otra categoría.</Text>
               </View>
             ) : (
               productosFiltrados.map((prod) => (
                 <View key={prod.id} style={styles.productCardItem}>
                   <View style={styles.productInfoCol}>
+                    <View style={styles.productBadgeRow}>
+                      {(() => {
+                        const badge = obtenerBadgeCategoria(prod);
+                        return (
+                          <Text style={[styles.productBadgeText, { backgroundColor: badge.bg, color: badge.color, borderColor: badge.border }]}>
+                            {badge.label}
+                          </Text>
+                        );
+                      })()}
+                    </View>
                     <Text style={styles.productTitle}>{prod.nombre}</Text>
                     <View style={styles.productPriceRow}>
                       <Text style={styles.productPriceAmount}>${prod.precio} MXN</Text>
@@ -1520,6 +1694,57 @@ export default function App() {
             )}
           </View>
 
+          {/* SECCIÓN 4.5: NOTAS DE PREPARACIÓN */}
+          <View style={styles.contentCard}>
+            <View style={styles.cardHeaderWithIcon}>
+              <Text style={styles.cardHeaderIcon}>📝</Text>
+              <View>
+                <Text style={styles.cardTitle}>Notas de Preparación (Opcional)</Text>
+                <Text style={styles.cardSub}>Especificaciones especiales para tus mariscos o ceviches</Text>
+              </View>
+            </View>
+
+            <View style={styles.notesChipsRow}>
+              {[
+                '❄️ Con bastante hielo',
+                '🔪 Bien fileteado',
+                '🦐 Pelado y desvenado',
+                '🌶️ Salsa extra aparte',
+                '🍋 Con tostadas y limones',
+                '🥗 Poco picante'
+              ].map((chipTexto, idx) => {
+                const yaAgregado = notasPedido.includes(chipTexto);
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.noteChip, yaAgregado && styles.noteChipActive]}
+                    onPress={() => {
+                      if (yaAgregado) {
+                        setNotasPedido(notasPedido.replace(chipTexto, '').replace(/,\s*,/g, ',').trim());
+                      } else {
+                        setNotasPedido(notasPedido ? `${notasPedido}, ${chipTexto}` : chipTexto);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.noteChipText, yaAgregado && styles.noteChipTextActive]}>
+                      {chipTexto}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TextInput
+              style={[styles.textInputModern, { marginTop: 10, minHeight: 52 }]}
+              placeholder="Ej. Dejar el ceviche bien frío, camarón listo para comer, medio crudo y medio cocido..."
+              placeholderTextColor="#94a3b8"
+              multiline={true}
+              numberOfLines={2}
+              value={notasPedido}
+              onChangeText={setNotasPedido}
+            />
+          </View>
+
           {/* SECCIÓN 5: HORA DE RECOLECCIÓN (DINÁMICA) */}
           <View style={styles.contentCard}>
             <View style={styles.cardHeaderWithIcon}>
@@ -1529,6 +1754,31 @@ export default function App() {
                 <Text style={styles.cardSub}>Apartamos tu turno para que tu producto esté listo</Text>
               </View>
             </View>
+
+            {Boolean(turnoMasProximo) && (
+              <TouchableOpacity
+                style={[
+                  styles.btnQuickPickup,
+                  horaSeleccionada === turnoMasProximo && styles.btnQuickPickupActive
+                ]}
+                onPress={() => setHoraSeleccionada(turnoMasProximo)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={styles.btnQuickPickupIcon}>⚡</Text>
+                  <View>
+                    <Text style={[styles.btnQuickPickupTitle, horaSeleccionada === turnoMasProximo && styles.btnQuickPickupTitleActive]}>
+                      Pasar lo antes posible
+                    </Text>
+                    <Text style={styles.btnQuickPickupSub}>
+                      Turno más próximo estimado: {turnoMasProximo}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.btnQuickPickupSelectBadge, horaSeleccionada === turnoMasProximo && styles.btnQuickPickupSelectBadgeActive]}>
+                  {horaSeleccionada === turnoMasProximo ? '✓ Elegido' : 'Seleccionar'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[styles.timeSelectorTrigger, horaSeleccionada && styles.timeSelectorTriggerActive]}
@@ -1568,6 +1818,31 @@ export default function App() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* BARRA FLOTANTE DEL CARRITO (Estilo UberEats/Rappi) */}
+        {carrito.length > 0 && (
+          <View style={styles.floatingCartBar}>
+            <View style={styles.floatingCartInfo}>
+              <View style={styles.floatingCartBadge}>
+                <Text style={styles.floatingCartBadgeText}>
+                  {carrito.length}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.floatingCartTitle}>Tu Pedido ({carrito.length} art.)</Text>
+                <Text style={styles.floatingCartTotal}>${calcularTotalCarrito().toFixed(2)} MXN</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.floatingCartBtn}
+              onPress={() => {
+                mainScrollRef.current?.scrollToEnd({ animated: true });
+              }}
+            >
+              <Text style={styles.floatingCartBtnText}>Completar Pedido ➔</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* =========================================================================
@@ -1797,7 +2072,10 @@ export default function App() {
             {/* SELECTOR DE UNIDADES */}
             <Text style={styles.inputLabel}>¿Cómo deseas pedirlo?</Text>
             <View style={styles.unitsTabsContainer}>
-              {['Kg', 'Gramos', 'Pesos'].map((unid) => (
+              {(['1/2 Litro', 'Litro', 'Porción', 'Pieza', 'Orden'].includes(productoSeleccionado?.unidad)
+                ? [productoSeleccionado.unidad, 'Pesos']
+                : ['Kg', 'Gramos', 'Pesos']
+              ).map((unid) => (
                 <TouchableOpacity
                   key={unid}
                   style={[styles.unitTabBtn, unidadSeleccionada === unid && styles.unitTabBtnActive]}
@@ -1815,6 +2093,22 @@ export default function App() {
 
             {/* ATAJOS RÁPIDOS DE CANTIDAD */}
             <View style={styles.quickShortcutsRow}>
+              {['1/2 Litro', 'Litro', 'Porción', 'Pieza', 'Orden'].includes(unidadSeleccionada) && (
+                <>
+                  <TouchableOpacity style={styles.shortcutChip} onPress={() => setCantidadInput('1')}>
+                    <Text style={styles.shortcutChipText}>1 {unidadSeleccionada}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.shortcutChip} onPress={() => setCantidadInput('2')}>
+                    <Text style={styles.shortcutChipText}>2 {unidadSeleccionada}s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.shortcutChip} onPress={() => setCantidadInput('3')}>
+                    <Text style={styles.shortcutChipText}>3 {unidadSeleccionada}s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.shortcutChip} onPress={() => setCantidadInput('4')}>
+                    <Text style={styles.shortcutChipText}>4 {unidadSeleccionada}s</Text>
+                  </TouchableOpacity>
+                </>
+              )}
               {unidadSeleccionada === 'Kg' && (
                 <>
                   <TouchableOpacity style={styles.shortcutChip} onPress={() => setCantidadInput('0.5')}>
@@ -1982,13 +2276,49 @@ export default function App() {
             </View>
 
             <View style={styles.formGroup}>
+              <Text style={styles.inputLabel}>Categoría del Producto</Text>
+              <View style={styles.categorySelectGrid}>
+                {[
+                  { id: 'preparados', label: '🥗 Preparados / Ceviches' },
+                  { id: 'camaron', label: '🦐 Camarón' },
+                  { id: 'pescado', label: '🐟 Pescado / Filete' },
+                  { id: 'pulpo', label: '🐙 Pulpo / Mariscos' },
+                  { id: 'complementos', label: '🍋 Complementos' }
+                ].map((catItem) => (
+                  <TouchableOpacity
+                    key={catItem.id}
+                    style={[styles.catSelectChip, categoriaNuevoProd === catItem.id && styles.catSelectChipActive]}
+                    onPress={() => setCategoriaNuevoProd(catItem.id)}
+                  >
+                    <Text style={[styles.catSelectChipText, categoriaNuevoProd === catItem.id && styles.catSelectChipTextActive]}>
+                      {catItem.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
               <Text style={styles.inputLabel}>Unidad Principal</Text>
+              <View style={styles.unitQuickSelectRow}>
+                {['1/2 Litro', 'Litro', 'Porción', 'Kg', 'Pieza'].map((uOption) => (
+                  <TouchableOpacity
+                    key={uOption}
+                    style={[styles.unitQuickChip, unidadNuevoProd === uOption && styles.unitQuickChipActive]}
+                    onPress={() => setUnidadNuevoProd(uOption)}
+                  >
+                    <Text style={[styles.unitQuickChipText, unidadNuevoProd === uOption && styles.unitQuickChipTextActive]}>
+                      {uOption}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <TextInput
-                style={styles.textInputModern}
-                placeholder="Ej. Kg, Pieza"
+                style={[styles.textInputModern, { marginTop: 6 }]}
+                placeholder="O escribe otra unidad..."
                 placeholderTextColor="#94a3b8"
                 value={unidadNuevoProd}
-                onChangeText={setNombreNuevoProd}
+                onChangeText={setUnidadNuevoProd}
               />
             </View>
 
@@ -2252,7 +2582,7 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0369a1',
+    backgroundColor: '#0c4a6e',
   },
   appContainer: {
     flex: 1,
@@ -2286,7 +2616,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#0369a1',
+    backgroundColor: '#0c4a6e',
+    borderBottomWidth: 1,
+    borderBottomColor: '#075985',
   },
   headerBrand: {
     flexDirection: 'row',
@@ -2740,6 +3072,42 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
+  // --- CATEGORÍAS HORIZONTALES ---
+  categoryScrollView: {
+    marginBottom: 10,
+  },
+  categoryScrollContainer: {
+    paddingVertical: 4,
+    gap: 8,
+  },
+  categoryPill: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  categoryPillActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.25,
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  categoryPillTextActive: {
+    color: '#ffffff',
+  },
+
   // --- PRODUCTOS ---
   productCardItem: {
     flexDirection: 'row',
@@ -2748,6 +3116,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+  },
+  productBadgeRow: {
+    marginBottom: 4,
+  },
+  productBadgeText: {
+    alignSelf: 'flex-start',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   productInfoCol: {
     flex: 1,
@@ -2764,9 +3145,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   productPriceAmount: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#0284c7',
+    color: '#0c4a6e',
   },
   productPriceUnit: {
     fontSize: 12,
@@ -2777,15 +3158,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   btnAddProductBtn: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#ea580c',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   btnAddProductBtnText: {
     color: '#ffffff',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   badgeAgotadoPill: {
     backgroundColor: '#f1f5f9',
@@ -3062,14 +3448,15 @@ const styles = StyleSheet.create({
 
   // --- BOTÓN PRINCIPAL CONFIRMAR ---
   btnMainOrderSubmit: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ea580c',
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: 'center',
     marginTop: 4,
-    shadowColor: '#10b981',
+    marginBottom: 16,
+    shadowColor: '#ea580c',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -3077,6 +3464,227 @@ const styles = StyleSheet.create({
     backgroundColor: '#94a3b8',
     shadowOpacity: 0,
     elevation: 0,
+  },
+  btnMainOrderSubmitText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  btnMainOrderSubmitSubtext: {
+    color: '#ffedd5',
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+
+  // --- BARRA FLOTANTE DEL CARRITO ---
+  floatingCartBar: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    right: 14,
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    zIndex: 99,
+  },
+  floatingCartInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  floatingCartBadge: {
+    backgroundColor: '#ea580c',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingCartBadgeText: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 13,
+  },
+  floatingCartTitle: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  floatingCartTotal: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  floatingCartBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  floatingCartBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+
+  // --- NOTAS DE PREPARACIÓN ---
+  notesChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  noteChip: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  noteChipActive: {
+    backgroundColor: '#ffedd5',
+    borderColor: '#ea580c',
+  },
+  noteChipText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  noteChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '700',
+  },
+
+  // --- TURNO RÁPIDO ---
+  btnQuickPickup: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#86efac',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  btnQuickPickupActive: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#16a34a',
+  },
+  btnQuickPickupIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  btnQuickPickupTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  btnQuickPickupTitleActive: {
+    color: '#166534',
+  },
+  btnQuickPickupSub: {
+    fontSize: 11,
+    color: '#16a34a',
+    marginTop: 2,
+  },
+  btnQuickPickupSelectBadge: {
+    backgroundColor: '#e2e8f0',
+    color: '#475569',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: '800',
+    overflow: 'hidden',
+  },
+  btnQuickPickupSelectBadgeActive: {
+    backgroundColor: '#16a34a',
+    color: '#ffffff',
+  },
+
+  // --- ADMIN SAMPLE Y CATEGORÍAS ---
+  btnAdminSampleAction: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnAdminSampleActionText: {
+    color: '#059669',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  categorySelectGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  catSelectChip: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  catSelectChipActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+  },
+  catSelectChipText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  catSelectChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  unitQuickSelectRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  unitQuickChip: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  unitQuickChipActive: {
+    backgroundColor: '#0284c7',
+    borderColor: '#0284c7',
+  },
+  unitQuickChipText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  unitQuickChipTextActive: {
+    color: '#ffffff',
   },
   btnMainOrderSubmitText: {
     color: '#ffffff',
