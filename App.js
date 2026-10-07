@@ -400,63 +400,83 @@ export default function App() {
   // DETECCIÓN INTELIGENTE DE CATEGORÍAS Y TIEMPO DE PREPARACIÓN
   // =========================================================================
 
+  // Helper infalible para detectar productos preparados o ceviches (sin importar acentos, mayúsculas o variaciones)
+  const esProductoPreparado = (item) => {
+    if (!item) return false;
+    const cat = String(item.categoria || '').toLowerCase().trim();
+    if (
+      cat === 'preparados' ||
+      cat === 'ceviches' ||
+      cat === 'ceviche' ||
+      cat.includes('preparad') ||
+      cat.includes('ceviche') ||
+      cat.includes('platillo') ||
+      cat.includes('cocina')
+    ) {
+      return true;
+    }
+    const n = String(item.nombre || '').toLowerCase().trim();
+    const nNorm = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return (
+      nNorm.includes('ceviche') ||
+      nNorm.includes('atun') ||
+      nNorm.includes('preparad') ||
+      nNorm.includes('aguachile') ||
+      nNorm.includes('coctel') ||
+      nNorm.includes('torito') ||
+      nNorm.includes('campechana') ||
+      nNorm.includes('ensalada') ||
+      nNorm.includes('tostada') ||
+      nNorm.includes('botana') ||
+      nNorm.includes('sashimi') ||
+      nNorm.includes('mariscada') ||
+      nNorm.includes('tartar') ||
+      nNorm.includes('cocido')
+    );
+  };
+
   const obtenerCategoriaProducto = (prod) => {
     if (!prod) return 'pescado';
-    if (prod.categoria) return prod.categoria;
-    const n = (prod.nombre || '').toLowerCase();
+    if (esProductoPreparado(prod)) return 'preparados';
+    const c = String(prod.categoria || '').toLowerCase().trim();
+    if (c === 'camaron' || c.includes('camar')) return 'camaron';
+    if (c === 'pescado' || c.includes('pescad') || c.includes('filete')) return 'pescado';
+    if (c === 'pulpo' || c.includes('marisco')) return 'pulpo';
+    if (c === 'complementos' || c.includes('complem')) return 'complementos';
+
+    const n = String(prod.nombre || '').toLowerCase().trim();
+    const nNorm = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (nNorm.includes('camaron')) return 'camaron';
     if (
-      n.includes('ceviche') ||
-      n.includes('atún') ||
-      n.includes('atun') ||
-      n.includes('preparado') ||
-      n.includes('aguachile') ||
-      n.includes('coctel') ||
-      n.includes('cóctel') ||
-      n.includes('torito') ||
-      n.includes('campechana') ||
-      n.includes('ensalada')
-    ) {
-      return 'preparados';
-    }
-    if (n.includes('camarón') || n.includes('camaron')) {
-      return 'camaron';
-    }
-    if (
-      n.includes('pescado') ||
-      n.includes('filete') ||
-      n.includes('posta') ||
-      n.includes('curvina') ||
-      n.includes('robalo') ||
-      n.includes('huachinango') ||
-      n.includes('lisa') ||
-      n.includes('mojarra') ||
-      n.includes('tilapia') ||
-      n.includes('cazón') ||
-      n.includes('cazon') ||
-      n.includes('salmón') ||
-      n.includes('salmon')
+      nNorm.includes('pescado') ||
+      nNorm.includes('filete') ||
+      nNorm.includes('posta') ||
+      nNorm.includes('curvina') ||
+      nNorm.includes('robalo') ||
+      nNorm.includes('huachinango') ||
+      nNorm.includes('lisa') ||
+      nNorm.includes('mojarra') ||
+      nNorm.includes('tilapia') ||
+      nNorm.includes('cazon') ||
+      nNorm.includes('salmon')
     ) {
       return 'pescado';
     }
     if (
-      n.includes('pulpo') ||
-      n.includes('calamar') ||
-      n.includes('callo') ||
-      n.includes('almeja') ||
-      n.includes('ostión') ||
-      n.includes('ostion') ||
-      n.includes('jaiba')
+      nNorm.includes('pulpo') ||
+      nNorm.includes('calamar') ||
+      nNorm.includes('callo') ||
+      nNorm.includes('almeja') ||
+      nNorm.includes('ostion') ||
+      nNorm.includes('jaiba')
     ) {
       return 'pulpo';
     }
     if (
-      n.includes('salsa') ||
-      n.includes('limón') ||
-      n.includes('limon') ||
-      n.includes('tostada') ||
-      n.includes('galleta') ||
-      n.includes('empanizador') ||
-      n.includes('mayonesa')
+      nNorm.includes('salsa') ||
+      nNorm.includes('limon') ||
+      nNorm.includes('galleta') ||
+      nNorm.includes('mayonesa')
     ) {
       return 'complementos';
     }
@@ -483,10 +503,7 @@ export default function App() {
 
   // Verifica si el cliente tiene al menos un platillo o ceviche en el carrito
   const tienePreparadosEnCarrito = useMemo(() => {
-    return carrito.some((item) => {
-      const cat = item.categoria || obtenerCategoriaProducto(item);
-      return cat === 'preparados';
-    });
+    return carrito.some((item) => esProductoPreparado(item));
   }, [carrito]);
 
   // Si incluye preparados/ceviches exige al menos 30 min de margen de cocina; de lo contrario 5 min
@@ -638,7 +655,7 @@ export default function App() {
     };
 
     // Si se agrega un preparado/ceviche y ya había una hora seleccionada que no cumple los 30 min, cancelarla de inmediato
-    const esPreparado = nuevoItem.categoria === 'preparados';
+    const esPreparado = esProductoPreparado(nuevoItem) || esProductoPreparado(productoSeleccionado);
     if (esPreparado && horaSeleccionada) {
       const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
       if (match) {
@@ -1860,31 +1877,6 @@ export default function App() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-
-        {/* BARRA FLOTANTE DEL CARRITO (Estilo UberEats/Rappi) */}
-        {carrito.length > 0 && (
-          <View style={styles.floatingCartBar}>
-            <View style={styles.floatingCartInfo}>
-              <View style={styles.floatingCartBadge}>
-                <Text style={styles.floatingCartBadgeText}>
-                  {carrito.length}
-                </Text>
-              </View>
-              <View>
-                <Text style={styles.floatingCartTitle}>Tu Pedido ({carrito.length} art.)</Text>
-                <Text style={styles.floatingCartTotal}>${calcularTotalCarrito().toFixed(2)} MXN</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.floatingCartBtn}
-              onPress={() => {
-                mainScrollRef.current?.scrollToEnd({ animated: true });
-              }}
-            >
-              <Text style={styles.floatingCartBtnText}>Completar Pedido ➔</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
       {/* =========================================================================
@@ -3571,68 +3563,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     fontWeight: '600',
-  },
-
-  // --- BARRA FLOTANTE DEL CARRITO ---
-  floatingCartBar: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    right: 14,
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-    zIndex: 99,
-  },
-  floatingCartInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  floatingCartBadge: {
-    backgroundColor: '#ea580c',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  floatingCartBadgeText: {
-    color: '#ffffff',
-    fontWeight: '900',
-    fontSize: 13,
-  },
-  floatingCartTitle: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  floatingCartTotal: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  floatingCartBtn: {
-    backgroundColor: '#ea580c',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  floatingCartBtnText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 12,
   },
 
   // --- NOTAS DE PREPARACIÓN ---
