@@ -603,6 +603,7 @@ export default function App() {
       idCarrito: Date.now().toString(),
       productoId: productoSeleccionado.id,
       nombre: productoSeleccionado.nombre,
+      categoria: productoSeleccionado.categoria || obtenerCategoriaProducto(productoSeleccionado),
       cantidad: cant,
       unidad: unidadSeleccionada,
       subtotal: subtotal
@@ -612,6 +613,14 @@ export default function App() {
     setProductoSeleccionado(null);
     setCantidadInput('');
   };
+
+  // Verifica si el cliente tiene al menos un platillo o ceviche en el carrito
+  const tienePreparadosEnCarrito = useMemo(() => {
+    return carrito.some((item) => {
+      const cat = item.categoria || obtenerCategoriaProducto(item);
+      return cat === 'preparados';
+    });
+  }, [carrito]);
 
   const handleEliminarDelCarrito = (idCarrito) => {
     setCarrito(carrito.filter((item) => item.idCarrito !== idCarrito));
@@ -697,13 +706,15 @@ export default function App() {
 
     try {
       const hoyStr = obtenerFechaHoyStr();
+      const notaEfectiva = tienePreparadosEnCarrito ? notasPedido.trim() : '';
+
       // 1. Guardar hora ocupada en Firestore vinculada a la fecha de hoy
       await addDoc(collection(db, 'horarios_ocupados'), {
         hora: horaSeleccionada,
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim() || 'No proporcionado',
         total: calcularTotalCarrito(),
-        notas: notasPedido.trim(),
+        notas: notaEfectiva,
         fecha: hoyStr,
         fechaRegistro: new Date().toISOString()
       });
@@ -731,7 +742,7 @@ export default function App() {
         telefonoCliente: telefonoCliente.trim(),
         total: total,
         hora: horaSeleccionada,
-        notas: notasPedido.trim(),
+        notas: notaEfectiva,
         metodoPago: metodoPagoTexto,
         carrito: [...carrito]
       };
@@ -746,8 +757,8 @@ export default function App() {
       }).join('\n');
 
       const contactoTexto = telefonoCliente.trim() ? `\n📞 *TEL:* ${telefonoCliente.trim()}` : '';
-      const notasTexto = notasPedido.trim()
-        ? `\n📝 *NOTAS DE PREPARACIÓN:*\n_${notasPedido.trim()}_\n━━━━━━━━━━━━━━━━━━━━━\n`
+      const notasTexto = notaEfectiva
+        ? `\n📝 *NOTAS PARA CEVICHE / PREPARADOS:*\n_${notaEfectiva}_\n━━━━━━━━━━━━━━━━━━━━━\n`
         : '';
 
       const mensajeWhatsApp =
@@ -780,7 +791,7 @@ export default function App() {
         cliente: nombreCliente.trim(),
         telefono: telefonoCliente.trim(),
         hora: horaSeleccionada,
-        notas: notasPedido.trim(),
+        notas: notaEfectiva,
         metodoPago: metodoPagoTexto,
         total: total,
         carrito: [...carrito],
@@ -1694,56 +1705,28 @@ export default function App() {
             )}
           </View>
 
-          {/* SECCIÓN 4.5: NOTAS DE PREPARACIÓN */}
-          <View style={styles.contentCard}>
-            <View style={styles.cardHeaderWithIcon}>
-              <Text style={styles.cardHeaderIcon}>📝</Text>
-              <View>
-                <Text style={styles.cardTitle}>Notas de Preparación (Opcional)</Text>
-                <Text style={styles.cardSub}>Especificaciones especiales para tus mariscos o ceviches</Text>
+          {/* SECCIÓN 4.5: NOTAS DE PREPARACIÓN (SOLO SI ELIGE PREPARADOS O CEVICHES) */}
+          {tienePreparadosEnCarrito && (
+            <View style={styles.contentCard}>
+              <View style={styles.cardHeaderWithIcon}>
+                <Text style={styles.cardHeaderIcon}>📝</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Notas de Preparación (Opcional)</Text>
+                  <Text style={styles.cardSub}>Indicaciones para tus ceviches o preparados</Text>
+                </View>
               </View>
-            </View>
 
-            <View style={styles.notesChipsRow}>
-              {[
-                '❄️ Con bastante hielo',
-                '🔪 Bien fileteado',
-                '🦐 Pelado y desvenado',
-                '🌶️ Salsa extra aparte',
-                '🍋 Con tostadas y limones',
-                '🥗 Poco picante'
-              ].map((chipTexto, idx) => {
-                const yaAgregado = notasPedido.includes(chipTexto);
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[styles.noteChip, yaAgregado && styles.noteChipActive]}
-                    onPress={() => {
-                      if (yaAgregado) {
-                        setNotasPedido(notasPedido.replace(chipTexto, '').replace(/,\s*,/g, ',').trim());
-                      } else {
-                        setNotasPedido(notasPedido ? `${notasPedido}, ${chipTexto}` : chipTexto);
-                      }
-                    }}
-                  >
-                    <Text style={[styles.noteChipText, yaAgregado && styles.noteChipTextActive]}>
-                      {chipTexto}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              <TextInput
+                style={[styles.textInputModern, { marginTop: 10, minHeight: 70, textAlignVertical: 'top' }]}
+                placeholder="Escribe aquí tus indicaciones (ej. Poco picante, sin cebolla, salsa y tostadas aparte...)"
+                placeholderTextColor="#94a3b8"
+                multiline={true}
+                numberOfLines={3}
+                value={notasPedido}
+                onChangeText={setNotasPedido}
+              />
             </View>
-
-            <TextInput
-              style={[styles.textInputModern, { marginTop: 10, minHeight: 52 }]}
-              placeholder="Ej. Dejar el ceviche bien frío, camarón listo para comer, medio crudo y medio cocido..."
-              placeholderTextColor="#94a3b8"
-              multiline={true}
-              numberOfLines={2}
-              value={notasPedido}
-              onChangeText={setNotasPedido}
-            />
-          </View>
+          )}
 
           {/* SECCIÓN 5: HORA DE RECOLECCIÓN (DINÁMICA) */}
           <View style={styles.contentCard}>
