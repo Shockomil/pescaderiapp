@@ -10,9 +10,13 @@ import {
   ScrollView,
   Modal,
   Platform,
-  Linking
+  Linking,
+  Image
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Logo oficial de Pescadería Batequis
+const LOGO_IMG = require('./assets/logo.png');
 
 // Configuración de Firebase
 import { db, auth } from './firebaseConfig';
@@ -878,12 +882,12 @@ export default function App() {
         {/* ENCABEZADO */}
         <View style={styles.header}>
           <View style={styles.headerBrand}>
-            <View style={styles.headerLogoBadge}>
-              <Text style={styles.headerLogoIcon}>🐟</Text>
+            <View style={styles.headerLogoContainer}>
+              <Image source={LOGO_IMG} style={styles.headerLogoImg} resizeMode="contain" />
             </View>
             <View>
               <Text style={styles.headerTitle}>Pescadería Batequis</Text>
-              <Text style={styles.headerSubtitle}>Pescados y Mariscos Frescos</Text>
+              <Text style={styles.headerSubtitle}>Camarón • Pescado • Pulpo</Text>
             </View>
           </View>
           <View style={styles.headerActions}>
@@ -1522,9 +1526,9 @@ export default function App() {
               {/* TICKET DIGITAL CON DISEÑO FORMAL DE COMPROBANTE */}
               <View style={styles.digitalTicketReceipt}>
                 <View style={styles.ticketTopHeader}>
-                  <Text style={styles.ticketLogoEmoji}>🐟</Text>
+                  <Image source={LOGO_IMG} style={styles.ticketLogoImg} resizeMode="contain" />
                   <Text style={styles.ticketStoreName}>PESCADERÍA BATEQUIS</Text>
-                  <Text style={styles.ticketSubStore}>COMPROBANTE Y TICKET DIGITAL</Text>
+                  <Text style={styles.ticketSubStore}>CAMARÓN • PESCADO • PULPO</Text>
                   <View style={styles.ticketFolioBadge}>
                     <Text style={styles.ticketFolioText}>FOLIO: #{ticketActual?.folio}</Text>
                   </View>
@@ -1849,6 +1853,9 @@ export default function App() {
               <TouchableOpacity onPress={() => setModalLoginVisible(false)}>
                 <Text style={styles.modalCloseIcon}>✕</Text>
               </TouchableOpacity>
+            </View>
+            <View style={{ alignItems: 'center', marginVertical: 8 }}>
+              <Image source={LOGO_IMG} style={{ width: 68, height: 68 }} resizeMode="contain" />
             </View>
             <Text style={styles.modalDialogSub}>Ingresa tus credenciales autorizadas</Text>
 
@@ -2210,17 +2217,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  headerLogoBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  headerLogoContainer: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#38bdf8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  headerLogoIcon: {
-    fontSize: 24,
+  headerLogoImg: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   headerTitle: {
     fontSize: 18,
@@ -3085,9 +3101,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  ticketLogoEmoji: {
-    fontSize: 32,
-    marginBottom: 4,
+  ticketLogoImg: {
+    width: 76,
+    height: 76,
+    alignSelf: 'center',
+    marginBottom: 6,
   },
   ticketStoreName: {
     fontSize: 16,
