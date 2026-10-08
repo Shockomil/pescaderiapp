@@ -14,6 +14,7 @@ import {
   Image
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 
 // Logo oficial de Pescadería Batequis
 const LOGO_IMG = require('./assets/logo.png');
@@ -128,6 +129,7 @@ export default function App() {
   const [telegramBotToken, setTelegramBotToken] = useState('8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk');
   const [telegramChatId, setTelegramChatId] = useState('-5409202124');
   const [enviandoPedido, setEnviandoPedido] = useState(false);
+  const [comprobanteTransferencia, setComprobanteTransferencia] = useState(null);
 
   // Configuración de horario y estado del negocio
   const [horaApertura, setHoraApertura] = useState(9); // 9 AM
@@ -789,6 +791,72 @@ export default function App() {
     return false;
   };
 
+  // Enviar imagen del comprobante de transferencia por Telegram
+  const enviarFotoTelegram = async (imageUri, captionHtml) => {
+    const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk';
+    const rawChatId = telegramChatId || '-5409202124';
+
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', rawChatId);
+      if (captionHtml) {
+        formData.append('caption', captionHtml);
+        formData.append('parse_mode', 'HTML');
+      }
+
+      if (Platform.OS === 'web') {
+        const res = await fetch(imageUri);
+        const blob = await res.blob();
+        formData.append('photo', blob, 'comprobante.jpg');
+      } else {
+        formData.append('photo', {
+          uri: imageUri,
+          type: 'image/jpeg',
+          name: 'comprobante.jpg'
+        });
+      }
+
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      return !!data.ok;
+    } catch (err) {
+      console.warn('Error enviando comprobante a Telegram:', err);
+      return false;
+    }
+  };
+
+  // Selector de imagen de comprobante
+  const handleSeleccionarComprobante = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted && Platform.OS !== 'web') {
+        mostrarAviso('Permiso Requerido', 'Necesitamos acceso a tus imágenes para subir el comprobante.', 'error');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setComprobanteTransferencia(result.assets[0]);
+        mostrarAviso('Comprobante Listo', 'Tu comprobante de pago se adjuntó con éxito y se enviará junto con el pedido.', 'exito');
+      }
+    } catch (error) {
+      console.warn('Error al seleccionar imagen:', error);
+      mostrarAviso('Error', 'No se pudo cargar la imagen. Intenta de nuevo.', 'error');
+    }
+  };
+
+  const handleEliminarComprobante = () => {
+    setComprobanteTransferencia(null);
+  };
+
   // --- CONFIRMAR PEDIDO Y GENERAR TICKET ---
   const handleConfirmarPedido = async () => {
     if (!estaAbierto && !isAdmin) {
@@ -822,7 +890,6 @@ export default function App() {
       await addDoc(collection(db, 'horarios_ocupados'), {
         hora: horaSeleccionada,
         cliente: nombreCliente.trim(),
-        telefono: telefonoCliente.trim() || 'No proporcionado',
         total: calcularTotalCarrito(),
         notas: notaEfectiva,
         fecha: hoyStr,
@@ -838,9 +905,6 @@ export default function App() {
       // 3. Guardar en historial local del dispositivo y asegurar persistencia del nombre
       try {
         await AsyncStorage.setItem('@nombre_cliente', nombreCliente.trim());
-        if (telefonoCliente.trim()) {
-          await AsyncStorage.setItem('@telefono_cliente', telefonoCliente.trim());
-        }
       } catch (e) {
         console.log('Error persistiendo nombre de cliente', e);
       }
@@ -849,7 +913,6 @@ export default function App() {
         folio: folio,
         fecha: fechaHoyFormateada,
         nombreCliente: nombreCliente.trim(),
-        telefonoCliente: telefonoCliente.trim(),
         total: total,
         hora: horaSeleccionada,
         notas: notaEfectiva,
@@ -858,7 +921,7 @@ export default function App() {
       };
       await guardarPedidoEnHistorial(registroLocal);
 
-      // 4. Formato de texto para respaldo o WhatsApp
+      // 4. Formato de texto para respaldo
       const lineasProductos = carrito.map((item) => {
         const detalleCantidad = item.unidad === 'Pesos'
           ? `$${item.cantidad} MXN`
@@ -866,18 +929,17 @@ export default function App() {
         return `• *${item.nombre}*: ${detalleCantidad} ➔ $${item.subtotal.toFixed(2)} MXN`;
       }).join('\n');
 
-      const contactoTexto = telefonoCliente.trim() ? `\n📞 *TEL:* ${telefonoCliente.trim()}` : '';
       const notasTexto = notaEfectiva
         ? `\n📝 *NOTAS PARA CEVICHE / PREPARADOS:*\n_${notaEfectiva}_\n━━━━━━━━━━━━━━━━━━━━━\n`
         : '';
 
-      const mensajeWhatsApp =
+      const mensajeResumen =
         `🐟 *PESCADERÍA BATEQUIS* 🐟\n` +
         `🧾 *FOLIO:* #${folio}\n` +
         `📅 *FECHA:* ${fechaHoyFormateada}\n` +
         `⏰ *HORA RECOLECCIÓN:* ${horaSeleccionada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `👤 *CLIENTE:* ${nombreCliente.trim()}${contactoTexto}\n` +
+        `👤 *CLIENTE:* ${nombreCliente.trim()}\n` +
         `💳 *MÉTODO DE PAGO:* ${metodoPagoTexto}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `🛒 *PRODUCTOS DEL PEDIDO:*\n` +
@@ -885,14 +947,7 @@ export default function App() {
         notasTexto +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `💰 *TOTAL ESTIMADO:* $${total.toFixed(2)} MXN\n` +
-        (metodoPago === 'transferencia' ? `📌 *Nota:* Te adjuntaré el comprobante de transferencia.\n` : '') +
-        `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `¿Me confirman la recepción de este pedido, por favor?`;
-
-      // Limpiar y validar número telefónico para WhatsApp
-      const cleanPhone = (telefonoContacto || '6681234567').replace(/\D/g, '');
-      const fullPhone = cleanPhone.startsWith('52') && cleanPhone.length > 10 ? cleanPhone : `52${cleanPhone}`;
-      const urlWhatsApp = `https://wa.me/${fullPhone}?text=${encodeURIComponent(mensajeWhatsApp)}`;
+        (metodoPago === 'transferencia' ? `📌 *Nota:* Pago por transferencia.\n` : '');
 
       // 5. ENVIAR DIRECTAMENTE A TELEGRAM AL GRUPO DE LA EMPRESA
       const lineasHtmlTelegram = carrito.map((item) => {
@@ -902,10 +957,11 @@ export default function App() {
         return `• <b>${item.nombre}</b>: ${detalleCantidad} ➔ <i>$${item.subtotal.toFixed(2)} MXN</i>`;
       }).join('\n');
 
-      const contactoHtml = telefonoCliente.trim() ? `\n📞 <b>TELÉFONO:</b> ${telefonoCliente.trim()}` : '';
       const notasHtml = notaEfectiva
         ? `\n━━━━━━━━━━━━━━━━━━━━━\n📝 <b>NOTAS DE PREPARACIÓN:</b>\n<i>${notaEfectiva}</i>`
         : '';
+
+      const tieneComprobanteAdjunto = metodoPago === 'transferencia' && !!comprobanteTransferencia?.uri;
 
       const mensajeHtmlTelegram =
         `🐟 <b>¡NUEVO PEDIDO RECIBIDO!</b> 🐟\n\n` +
@@ -913,7 +969,7 @@ export default function App() {
         `⏰ <b>HORA RECOLECCIÓN:</b> <b>${horaSeleccionada}</b>\n` +
         `📅 <b>FECHA:</b> ${fechaHoyFormateada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>CLIENTE:</b> ${nombreCliente.trim()}${contactoHtml}\n` +
+        `👤 <b>CLIENTE:</b> <b>${nombreCliente.trim()}</b>\n` +
         `💳 <b>MÉTODO DE PAGO:</b> ${metodoPagoTexto}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `🛒 <b>PRODUCTOS:</b>\n` +
@@ -921,33 +977,42 @@ export default function App() {
         notasHtml +
         `\n━━━━━━━━━━━━━━━━━━━━━\n` +
         `💰 <b>TOTAL ESTIMADO:</b> <b>$${total.toFixed(2)} MXN</b>\n` +
-        (metodoPago === 'transferencia' ? `📌 <i>El cliente pagará por transferencia bancaria.</i>\n` : '');
+        (tieneComprobanteAdjunto
+          ? `📸 <i>Comprobante de pago adjunto en la siguiente foto 👇</i>\n`
+          : metodoPago === 'transferencia'
+            ? `📌 <i>El cliente pagará por transferencia bancaria.</i>\n`
+            : '');
 
       const enviadoTelegram = await enviarNotificacionTelegram(mensajeHtmlTelegram);
+
+      // Si es transferencia y adjuntó comprobante, enviarlo de inmediato a Telegram
+      if (tieneComprobanteAdjunto) {
+        const captionComprobante = `🧾 <b>Comprobante de Pago Adjunto</b>\nFolio: <code>#${folio}</code>\nCliente: <b>${nombreCliente.trim()}</b>\nTotal: <b>$${total.toFixed(2)} MXN</b>`;
+        await enviarFotoTelegram(comprobanteTransferencia.uri, captionComprobante);
+      }
 
       // 6. Crear objeto de Ticket Digital
       const ticketData = {
         folio: folio,
         fecha: fechaHoyFormateada,
         cliente: nombreCliente.trim(),
-        telefono: telefonoCliente.trim(),
         hora: horaSeleccionada,
         notas: notaEfectiva,
         metodoPago: metodoPagoTexto,
         total: total,
         carrito: [...carrito],
-        mensajeCompleto: mensajeWhatsApp,
-        urlWhatsApp: urlWhatsApp,
+        mensajeCompleto: mensajeResumen,
         enviadoTelegram: enviadoTelegram
       };
 
       setTicketActual(ticketData);
       setModalTicketVisible(true);
 
-      // Limpiar formulario y carrito
+      // Limpiar formulario, carrito y comprobante
       setCarrito([]);
       setHoraSeleccionada(null);
       setNotasPedido('');
+      setComprobanteTransferencia(null);
     } catch (error) {
       console.error(error);
       mostrarAviso('Error', 'Ocurrió un problema al reservar tu pedido. Por favor intenta de nuevo.', 'error');
@@ -1463,7 +1528,7 @@ export default function App() {
                 <Text style={styles.cardSub}>Para identificar tu pedido al llegar a sucursal</Text>
               </View>
             </View>
-            <View style={styles.formGroup}>
+            <View style={[styles.formGroup, { marginBottom: 0 }]}>
               <View style={styles.inputLabelRow}>
                 <Text style={styles.inputLabel}>Nombre Completo *</Text>
                 {nombreCliente.trim().length > 0 && (
@@ -1476,22 +1541,6 @@ export default function App() {
                 placeholderTextColor="#94a3b8"
                 value={nombreCliente}
                 onChangeText={handleCambioNombreCliente}
-              />
-            </View>
-            <View style={[styles.formGroup, { marginBottom: 0 }]}>
-              <View style={styles.inputLabelRow}>
-                <Text style={styles.inputLabel}>Teléfono Celular (Opcional)</Text>
-                {telefonoCliente.trim().length > 0 && (
-                  <Text style={styles.inputHelperSaved}>✓ Guardado</Text>
-                )}
-              </View>
-              <TextInput
-                style={styles.textInputModern}
-                placeholder="Ej. 6681234567"
-                placeholderTextColor="#94a3b8"
-                keyboardType="phone-pad"
-                value={telefonoCliente}
-                onChangeText={handleCambioTelefonoCliente}
               />
             </View>
           </View>
@@ -1842,9 +1891,48 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
 
-                <Text style={styles.bankInfoNote}>
-                  📌 Recuerda adjuntar tu comprobante de pago al enviar el pedido por WhatsApp.
-                </Text>
+                {/* ADJUNTAR COMPROBANTE DE PAGO */}
+                <View style={[styles.receiptUploadBox, comprobanteTransferencia && styles.receiptUploadBoxActive]}>
+                  {comprobanteTransferencia ? (
+                    <View style={styles.receiptPreviewContainer}>
+                      <Image
+                        source={{ uri: comprobanteTransferencia.uri }}
+                        style={styles.receiptPreviewImage}
+                        resizeMode="cover"
+                      />
+                      <Text style={styles.receiptUploadTitle}>✓ Comprobante de Pago Adjuntado</Text>
+                      <Text style={styles.receiptUploadSub}>Se enviará automáticamente a Telegram junto con tu pedido</Text>
+                      <View style={styles.receiptPreviewActions}>
+                        <TouchableOpacity
+                          style={styles.btnChangeReceipt}
+                          onPress={handleSeleccionarComprobante}
+                        >
+                          <Text style={styles.btnChangeReceiptText}>🔄 Cambiar Foto</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.btnRemoveReceipt}
+                          onPress={handleEliminarComprobante}
+                        >
+                          <Text style={styles.btnRemoveReceiptText}>✕ Quitar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.receiptUploadIcon}>📸</Text>
+                      <Text style={styles.receiptUploadTitle}>Adjuntar Comprobante de Transferencia</Text>
+                      <Text style={styles.receiptUploadSub}>
+                        Sube una captura o foto de tu comprobante y se enviará directo a nuestro Telegram
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.btnUploadReceipt}
+                        onPress={handleSeleccionarComprobante}
+                      >
+                        <Text style={styles.btnUploadReceiptText}>📎 Seleccionar Imagen</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               </View>
             )}
           </View>
@@ -1994,12 +2082,6 @@ export default function App() {
                   <Text style={styles.ticketDataLabel}>Cliente:</Text>
                   <Text style={styles.ticketDataValue}>{ticketActual?.cliente}</Text>
                 </View>
-                {ticketActual?.telefono ? (
-                  <View style={styles.ticketDataRow}>
-                    <Text style={styles.ticketDataLabel}>Teléfono:</Text>
-                    <Text style={styles.ticketDataValue}>{ticketActual?.telefono}</Text>
-                  </View>
-                ) : null}
                 <View style={styles.ticketDataRow}>
                   <Text style={styles.ticketDataLabel}>Fecha:</Text>
                   <Text style={styles.ticketDataValue}>{ticketActual?.fecha}</Text>
@@ -2051,7 +2133,7 @@ export default function App() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.ticketSuccessNoticeTitle}>¡Pedido Enviado a la Empresa!</Text>
                       <Text style={styles.ticketSuccessNoticeDesc}>
-                        Tu pedido llegó directamente al equipo de cocina en Telegram con el Folio #{ticketActual?.folio}. Te esperamos a las {ticketActual?.hora}.
+                        Tu pedido llegó directamente al equipo de recepción en Telegram con el Folio #{ticketActual?.folio}. Te esperamos a las {ticketActual?.hora}.
                       </Text>
                     </View>
                   </View>
@@ -2061,7 +2143,7 @@ export default function App() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.ticketSuccessNoticeTitle, { color: '#c2410c' }]}>Ticket Registrado</Text>
                       <Text style={[styles.ticketSuccessNoticeDesc, { color: '#9a3412' }]}>
-                        Tu folio es #{ticketActual?.folio}. Puedes enviar una copia por WhatsApp con el botón de abajo.
+                        Tu folio es #{ticketActual?.folio}. Muestra este ticket digital al recoger tu pedido.
                       </Text>
                     </View>
                   </View>
@@ -2071,19 +2153,7 @@ export default function App() {
                   style={styles.btnCloseTicketModalPrimary}
                   onPress={() => setModalTicketVisible(false)}
                 >
-                  <Text style={styles.btnCloseTicketModalPrimaryText}>✓ Entendido / Volver al Menú</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.btnActionWhatsAppSecondary}
-                  onPress={() => abrirWhatsAppConMensaje(ticketActual?.urlWhatsApp)}
-                >
-                  <Text style={styles.btnActionWhatsAppSecondaryText}>
-                    💬 ¿Tienes alguna duda? Escríbenos por WhatsApp
-                  </Text>
-                  <Text style={styles.btnActionWhatsAppSecondarySub}>
-                    Atención personalizada de Sucursal Batequis
-                  </Text>
+                  <Text style={styles.btnCloseTicketModalPrimaryText}>✓ Finalizar y Volver al Menú</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -2091,7 +2161,7 @@ export default function App() {
                   onPress={() => copiarAlPortapapeles(ticketActual?.mensajeCompleto, 'Resumen del pedido copiado')}
                 >
                   <Text style={styles.btnActionCopyDetailsText}>
-                    📋 {copiadoFeedback ? '¡Copiado con Éxito!' : 'Copiar Texto del Pedido'}
+                    📋 {copiadoFeedback ? '¡Copiado con Éxito!' : 'Copiar Folio y Resumen'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -3569,11 +3639,86 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#475569',
   },
-  bankInfoNote: {
+  // --- ADJUNTAR COMPROBANTE ---
+  receiptUploadBox: {
+    marginTop: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  receiptUploadBoxActive: {
+    borderColor: '#10b981',
+    borderStyle: 'solid',
+    backgroundColor: '#f0fdf4',
+  },
+  receiptUploadIcon: {
+    fontSize: 26,
+    marginBottom: 4,
+  },
+  receiptUploadTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+  },
+  receiptUploadSub: {
     fontSize: 11,
     color: '#64748b',
-    fontStyle: 'italic',
     textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  btnUploadReceipt: {
+    backgroundColor: '#0c4a6e',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  btnUploadReceiptText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  receiptPreviewContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  receiptPreviewImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  receiptPreviewActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  btnChangeReceipt: {
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 6,
+  },
+  btnChangeReceiptText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  btnRemoveReceipt: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 6,
+  },
+  btnRemoveReceiptText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#dc2626',
   },
 
   // --- AVISO TIEMPO DE PREPARACIÓN (30 MIN) ---
@@ -4110,27 +4255,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '900',
-  },
-  btnActionWhatsAppSecondary: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1.5,
-    borderColor: '#86efac',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  btnActionWhatsAppSecondaryText: {
-    color: '#15803d',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  btnActionWhatsAppSecondarySub: {
-    color: '#16a34a',
-    fontSize: 10,
-    marginTop: 2,
-    fontWeight: '600',
   },
   btnActionCopyDetails: {
     backgroundColor: '#f1f5f9',
