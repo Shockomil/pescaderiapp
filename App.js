@@ -124,6 +124,11 @@ export default function App() {
 
   const [urlUbicacion, setUrlUbicacion] = useState('https://maps.google.com');
 
+  // Configuración de integración con Telegram (para notificación directa de pedidos)
+  const [telegramBotToken, setTelegramBotToken] = useState('8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wlsyjk');
+  const [telegramChatId, setTelegramChatId] = useState('-5409202124');
+  const [enviandoPedido, setEnviandoPedido] = useState(false);
+
   // Configuración de horario y estado del negocio
   const [horaApertura, setHoraApertura] = useState(9); // 9 AM
   const [horaCierre, setHoraCierre] = useState(17);    // 5 PM
@@ -281,6 +286,8 @@ export default function App() {
         if (data.horaApertura !== undefined) setHoraApertura(Number(data.horaApertura));
         if (data.horaCierre !== undefined) setHoraCierre(Number(data.horaCierre));
         if (data.modoForzadoEstado) setModoForzadoEstado(data.modoForzadoEstado);
+        if (data.telegramBotToken) setTelegramBotToken(data.telegramBotToken);
+        if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
 
         // Campos bancarios individuales y backward-compatibility
         if (data.bancoNombre) setBancoNombre(data.bancoNombre);
@@ -744,6 +751,44 @@ export default function App() {
     }
   };
 
+  // --- NOTIFICACIÓN DIRECTA A TELEGRAM ---
+  const enviarNotificacionTelegram = async (mensajeHtml) => {
+    const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wlsyjk';
+    const rawChatId = telegramChatId || '-5409202124';
+
+    // Lista de posibles formatos de Chat ID (por si Telegram requiere el prefijo -100 para supergrupos)
+    const possibleChatIds = [rawChatId];
+    if (rawChatId.startsWith('-') && !rawChatId.startsWith('-100')) {
+      possibleChatIds.push('-100' + rawChatId.substring(1));
+    }
+
+    for (const cid of possibleChatIds) {
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            chat_id: cid,
+            text: mensajeHtml,
+            parse_mode: 'HTML'
+          })
+        });
+        const data = await response.json();
+        if (data.ok) {
+          console.log('Pedido enviado exitosamente a Telegram, chat_id:', cid);
+          return true;
+        } else {
+          console.warn(`Fallo al enviar a Telegram (${cid}):`, data.description);
+        }
+      } catch (err) {
+        console.warn('Error de conexión con Telegram API:', err);
+      }
+    }
+    return false;
+  };
+
   // --- CONFIRMAR PEDIDO Y GENERAR TICKET ---
   const handleConfirmarPedido = async () => {
     if (!estaAbierto && !isAdmin) {
@@ -766,6 +811,8 @@ export default function App() {
       mostrarAviso('Horario Requerido', 'Selecciona la hora estimada en la que pasarás por tu pedido.', 'error');
       return;
     }
+
+    setEnviandoPedido(true);
 
     try {
       const hoyStr = obtenerFechaHoyStr();
@@ -811,7 +858,7 @@ export default function App() {
       };
       await guardarPedidoEnHistorial(registroLocal);
 
-      // 4. Construir formato de texto para WhatsApp
+      // 4. Formato de texto para respaldo o WhatsApp
       const lineasProductos = carrito.map((item) => {
         const detalleCantidad = item.unidad === 'Pesos'
           ? `$${item.cantidad} MXN`
@@ -847,7 +894,38 @@ export default function App() {
       const fullPhone = cleanPhone.startsWith('52') && cleanPhone.length > 10 ? cleanPhone : `52${cleanPhone}`;
       const urlWhatsApp = `https://wa.me/${fullPhone}?text=${encodeURIComponent(mensajeWhatsApp)}`;
 
-      // 5. Crear objeto de Ticket Digital
+      // 5. ENVIAR DIRECTAMENTE A TELEGRAM AL GRUPO DE LA EMPRESA
+      const lineasHtmlTelegram = carrito.map((item) => {
+        const detalleCantidad = item.unidad === 'Pesos'
+          ? `$${item.cantidad} MXN`
+          : `${item.cantidad} ${item.unidad}`;
+        return `• <b>${item.nombre}</b>: ${detalleCantidad} ➔ <i>$${item.subtotal.toFixed(2)} MXN</i>`;
+      }).join('\n');
+
+      const contactoHtml = telefonoCliente.trim() ? `\n📞 <b>TELÉFONO:</b> ${telefonoCliente.trim()}` : '';
+      const notasHtml = notaEfectiva
+        ? `\n━━━━━━━━━━━━━━━━━━━━━\n📝 <b>NOTAS DE PREPARACIÓN:</b>\n<i>${notaEfectiva}</i>`
+        : '';
+
+      const mensajeHtmlTelegram =
+        `🐟 <b>¡NUEVO PEDIDO RECIBIDO!</b> 🐟\n\n` +
+        `🧾 <b>FOLIO:</b> <code>#${folio}</code>\n` +
+        `⏰ <b>HORA RECOLECCIÓN:</b> <b>${horaSeleccionada}</b>\n` +
+        `📅 <b>FECHA:</b> ${fechaHoyFormateada}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>CLIENTE:</b> ${nombreCliente.trim()}${contactoHtml}\n` +
+        `💳 <b>MÉTODO DE PAGO:</b> ${metodoPagoTexto}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🛒 <b>PRODUCTOS:</b>\n` +
+        `${lineasHtmlTelegram}\n` +
+        notasHtml +
+        `\n━━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 <b>TOTAL ESTIMADO:</b> <b>$${total.toFixed(2)} MXN</b>\n` +
+        (metodoPago === 'transferencia' ? `📌 <i>El cliente pagará por transferencia bancaria.</i>\n` : '');
+
+      const enviadoTelegram = await enviarNotificacionTelegram(mensajeHtmlTelegram);
+
+      // 6. Crear objeto de Ticket Digital
       const ticketData = {
         folio: folio,
         fecha: fechaHoyFormateada,
@@ -859,7 +937,8 @@ export default function App() {
         total: total,
         carrito: [...carrito],
         mensajeCompleto: mensajeWhatsApp,
-        urlWhatsApp: urlWhatsApp
+        urlWhatsApp: urlWhatsApp,
+        enviadoTelegram: enviadoTelegram
       };
 
       setTicketActual(ticketData);
@@ -872,6 +951,8 @@ export default function App() {
     } catch (error) {
       console.error(error);
       mostrarAviso('Error', 'Ocurrió un problema al reservar tu pedido. Por favor intenta de nuevo.', 'error');
+    } finally {
+      setEnviandoPedido(false);
     }
   };
 
@@ -1861,26 +1942,31 @@ export default function App() {
           <TouchableOpacity
             style={[
               styles.btnMainOrderSubmit,
-              (!estaAbierto && !isAdmin) && styles.btnMainOrderSubmitDisabled
+              ((!estaAbierto && !isAdmin) || enviandoPedido) && styles.btnMainOrderSubmitDisabled
             ]}
+            disabled={(!estaAbierto && !isAdmin) || enviandoPedido}
             onPress={handleConfirmarPedido}
           >
             <Text style={styles.btnMainOrderSubmitText}>
-              {estaAbierto
-                ? 'Confirmar Pedido y Abrir WhatsApp 🚀'
-                : 'Sucursal Cerrada por el Momento 🛑'}
+              {enviandoPedido
+                ? 'Enviando Pedido a Sucursal... ⏳'
+                : estaAbierto
+                  ? 'Confirmar y Enviar Pedido a Sucursal 🚀'
+                  : 'Sucursal Cerrada por el Momento 🛑'}
             </Text>
             <Text style={styles.btnMainOrderSubmitSubtext}>
-              {estaAbierto
-                ? 'Genera tu ticket digital y envía el detalle al instante'
-                : 'Consulta nuestros horarios de atención'}
+              {enviandoPedido
+                ? 'Conectando con la recepción en Telegram...'
+                : estaAbierto
+                  ? 'Se enviará directo a nuestra cocina para preparar tu turno'
+                  : 'Consulta nuestros horarios de atención'}
             </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
       {/* =========================================================================
-          MODAL 1: TICKET DIGITAL Y ENVÍO A WHATSAPP
+          MODAL 1: TICKET DIGITAL Y CONFIRMACIÓN DE PEDIDO
          ========================================================================= */}
       <Modal visible={modalTicketVisible} animationType="slide" transparent={true}>
         <View style={styles.modalBackdrop}>
@@ -1953,21 +2039,50 @@ export default function App() {
                 </View>
 
                 <Text style={styles.ticketFootnote}>
-                  ¡Gracias por tu preferencia! Confirma por WhatsApp para procesar tu pedido de inmediato.
+                  ¡Gracias por tu preferencia! Tu pedido ha sido enviado y registrado con éxito en sucursal.
                 </Text>
               </View>
 
               {/* BOTONES DE ACCIÓN */}
               <View style={styles.ticketActionsContainer}>
+                {ticketActual?.enviadoTelegram ? (
+                  <View style={styles.ticketSuccessNotice}>
+                    <Text style={styles.ticketSuccessNoticeIcon}>✅</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.ticketSuccessNoticeTitle}>¡Pedido Enviado a la Empresa!</Text>
+                      <Text style={styles.ticketSuccessNoticeDesc}>
+                        Tu pedido llegó directamente al equipo de cocina en Telegram con el Folio #{ticketActual?.folio}. Te esperamos a las {ticketActual?.hora}.
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[styles.ticketSuccessNotice, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
+                    <Text style={styles.ticketSuccessNoticeIcon}>📋</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.ticketSuccessNoticeTitle, { color: '#c2410c' }]}>Ticket Registrado</Text>
+                      <Text style={[styles.ticketSuccessNoticeDesc, { color: '#9a3412' }]}>
+                        Tu folio es #{ticketActual?.folio}. Puedes enviar una copia por WhatsApp con el botón de abajo.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.btnActionWhatsAppPrimary}
+                  style={styles.btnCloseTicketModalPrimary}
+                  onPress={() => setModalTicketVisible(false)}
+                >
+                  <Text style={styles.btnCloseTicketModalPrimaryText}>✓ Entendido / Volver al Menú</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.btnActionWhatsAppSecondary}
                   onPress={() => abrirWhatsAppConMensaje(ticketActual?.urlWhatsApp)}
                 >
-                  <Text style={styles.btnActionWhatsAppPrimaryText}>
-                    📲 Enviar Pedido a WhatsApp
+                  <Text style={styles.btnActionWhatsAppSecondaryText}>
+                    💬 ¿Tienes alguna duda? Escríbenos por WhatsApp
                   </Text>
-                  <Text style={styles.btnActionWhatsAppPrimarySub}>
-                    Se abrirá la conversación con todos tus datos
+                  <Text style={styles.btnActionWhatsAppSecondarySub}>
+                    Atención personalizada de Sucursal Batequis
                   </Text>
                 </TouchableOpacity>
 
@@ -1978,13 +2093,6 @@ export default function App() {
                   <Text style={styles.btnActionCopyDetailsText}>
                     📋 {copiadoFeedback ? '¡Copiado con Éxito!' : 'Copiar Texto del Pedido'}
                   </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.btnCloseTicketModal}
-                  onPress={() => setModalTicketVisible(false)}
-                >
-                  <Text style={styles.btnCloseTicketModalText}>Finalizar y Volver al Menú</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -3961,44 +4069,79 @@ const styles = StyleSheet.create({
   ticketActionsContainer: {
     marginTop: 14,
   },
-  btnActionWhatsAppPrimary: {
-    backgroundColor: '#25D366',
+  ticketSuccessNotice: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1.5,
+    borderColor: '#6ee7b7',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 10,
+  },
+  ticketSuccessNoticeIcon: {
+    fontSize: 24,
+  },
+  ticketSuccessNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065f46',
+  },
+  ticketSuccessNoticeDesc: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  btnCloseTicketModalPrimary: {
+    backgroundColor: '#0c4a6e',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#25D366',
+    shadowColor: '#0c4a6e',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 3,
+    marginBottom: 8,
   },
-  btnActionWhatsAppPrimaryText: {
+  btnCloseTicketModalPrimaryText: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '900',
   },
-  btnActionWhatsAppPrimarySub: {
-    color: '#f0fdf4',
-    fontSize: 11,
+  btnActionWhatsAppSecondary: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#86efac',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  btnActionWhatsAppSecondaryText: {
+    color: '#15803d',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  btnActionWhatsAppSecondarySub: {
+    color: '#16a34a',
+    fontSize: 10,
     marginTop: 2,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   btnActionCopyDetails: {
     backgroundColor: '#f1f5f9',
     paddingVertical: 11,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 8,
   },
   btnActionCopyDetailsText: {
     color: '#334155',
     fontSize: 13,
     fontWeight: '700',
-  },
-  btnCloseTicketModal: {
-    paddingVertical: 11,
-    alignItems: 'center',
-    marginTop: 6,
   },
   btnCloseTicketModalText: {
     color: '#64748b',
