@@ -125,7 +125,7 @@ export default function App() {
   const [urlUbicacion, setUrlUbicacion] = useState('https://maps.google.com');
 
   // Configuración de integración con Telegram (para notificación directa de pedidos)
-  const [telegramBotToken, setTelegramBotToken] = useState('8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wlsyjk');
+  const [telegramBotToken, setTelegramBotToken] = useState('8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk');
   const [telegramChatId, setTelegramChatId] = useState('-5409202124');
   const [enviandoPedido, setEnviandoPedido] = useState(false);
 
@@ -753,7 +753,7 @@ export default function App() {
 
   // --- NOTIFICACIÓN DIRECTA A TELEGRAM ---
   const enviarNotificacionTelegram = async (mensajeHtml) => {
-    const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wlsyjk';
+    const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk';
     const rawChatId = telegramChatId || '-5409202124';
 
     // Lista de posibles formatos de Chat ID (por si Telegram requiere el prefijo -100 para supergrupos)
