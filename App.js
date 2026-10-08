@@ -36,8 +36,10 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 
-// Estructura de horas para recolección
+// Estructura de horas para recolección (jornada completa de 7 AM a 11 PM)
 const HORAS_JORNADA = [
+  { horaStr: '07', ampm: 'AM', hora24: 7 },
+  { horaStr: '08', ampm: 'AM', hora24: 8 },
   { horaStr: '09', ampm: 'AM', hora24: 9 },
   { horaStr: '10', ampm: 'AM', hora24: 10 },
   { horaStr: '11', ampm: 'AM', hora24: 11 },
@@ -50,6 +52,9 @@ const HORAS_JORNADA = [
   { horaStr: '06', ampm: 'PM', hora24: 18 },
   { horaStr: '07', ampm: 'PM', hora24: 19 },
   { horaStr: '08', ampm: 'PM', hora24: 20 },
+  { horaStr: '09', ampm: 'PM', hora24: 21 },
+  { horaStr: '10', ampm: 'PM', hora24: 22 },
+  { horaStr: '11', ampm: 'PM', hora24: 23 },
 ];
 
 const MINUTOS_INTERVALOS = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
@@ -522,16 +527,19 @@ export default function App() {
   // LÓGICA DINÁMICA: OCULTAR HORAS Y MINUTOS PASADOS SEGÚN LA HORA DEL DÍA
   // =========================================================================
 
-  // Minutos disponibles en el futuro para una hora dada (considerando margen de preparación estricto)
+  // Minutos disponibles en el futuro para una hora dada (considerando margen de preparación estricto y hora de cierre)
   const obtenerMinutosDisponibles = (itemHora) => {
     if (!itemHora) return [];
     const ahora = new Date();
     const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
     const margen = tienePreparadosEnCarrito ? 30 : 5;
+    const minMaxCierre = horaCierre * 60;
 
     return MINUTOS_INTERVALOS.filter((minStr) => {
       const minEntero = parseInt(minStr, 10);
       const totalMinutosTurno = itemHora.hora24 * 60 + minEntero;
+      // No debe ser posterior a la hora de cierre
+      if (totalMinutosTurno > minMaxCierre) return false;
       // Cualquier turno a menos de 30 min (si hay preparados) o menos de 5 min (normal) es estrictamente descartado
       return (totalMinutosTurno - minActuales) >= margen;
     });
@@ -540,7 +548,7 @@ export default function App() {
   // Horas del día que aún tienen minutos disponibles y están en horario comercial
   const horasDisponiblesHoy = useMemo(() => {
     return HORAS_JORNADA.filter((item) => {
-      if (item.hora24 < horaApertura || item.hora24 >= horaCierre) {
+      if (item.hora24 < horaApertura || item.hora24 > horaCierre) {
         return false;
       }
       const minutosFuturos = obtenerMinutosDisponibles(item);
@@ -552,15 +560,17 @@ export default function App() {
   const minutosDisponiblesBloque = useMemo(() => {
     if (!horaBloqueActivo) return [];
     return obtenerMinutosDisponibles(horaBloqueActivo);
-  }, [horaBloqueActivo, minutosActualesDelDia, tienePreparadosEnCarrito]);
+  }, [horaBloqueActivo, minutosActualesDelDia, tienePreparadosEnCarrito, horaCierre]);
 
   // Si la hora activa ya expiró o no está en la lista de horas válidas, mover al primer bloque disponible
   useEffect(() => {
     if (horasDisponiblesHoy.length > 0) {
-      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      const sigueValida = horasDisponiblesHoy.some((h) => h.hora24 === horaBloqueActivo?.hora24);
       if (!sigueValida) {
         setHoraBloqueActivo(horasDisponiblesHoy[0]);
       }
+    } else {
+      setHoraBloqueActivo(null);
     }
   }, [horasDisponiblesHoy, horaBloqueActivo]);
 
@@ -595,7 +605,7 @@ export default function App() {
 
   const abrirModalHora = () => {
     if (horasDisponiblesHoy.length > 0) {
-      const sigueValida = horasDisponiblesHoy.some((h) => h.horaStr === horaBloqueActivo?.horaStr);
+      const sigueValida = horasDisponiblesHoy.some((h) => h.hora24 === horaBloqueActivo?.hora24);
       if (!sigueValida) {
         setHoraBloqueActivo(horasDisponiblesHoy[0]);
       }
@@ -2198,10 +2208,10 @@ export default function App() {
                 <Text style={styles.stepSubtitle}>1. Elige la Hora:</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalHoursScroll}>
                   {horasDisponiblesHoy.map((item) => {
-                    const esActiva = horaBloqueActivo?.horaStr === item.horaStr;
+                    const esActiva = horaBloqueActivo?.hora24 === item.hora24;
                     return (
                       <TouchableOpacity
-                        key={item.horaStr}
+                        key={`${item.hora24}_${item.horaStr}_${item.ampm}`}
                         style={[styles.hourPill, esActiva && styles.hourPillActive]}
                         onPress={() => setHoraBloqueActivo(item)}
                       >
@@ -2232,11 +2242,8 @@ export default function App() {
 
                       const ahora = new Date();
                       const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
-                      let h = parseInt(horaBloqueActivo.horaStr, 10);
-                      const m = parseInt(min, 10);
-                      if (horaBloqueActivo.ampm.toUpperCase() === 'PM' && h < 12) h += 12;
-                      if (horaBloqueActivo.ampm.toUpperCase() === 'AM' && h === 12) h = 0;
-                      const diffMins = (h * 60 + m) - minActuales;
+                      const totalMinTurno = horaBloqueActivo.hora24 * 60 + parseInt(min, 10);
+                      const diffMins = totalMinTurno - minActuales;
 
                       return (
                         <TouchableOpacity
