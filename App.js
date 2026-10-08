@@ -138,7 +138,7 @@ export default function App() {
 
   // Configuración de horario y estado del negocio
   const [horaApertura, setHoraApertura] = useState(9); // 9 AM
-  const [horaCierre, setHoraCierre] = useState(17);    // 5 PM
+  const [horaCierre, setHoraCierre] = useState(23);    // 11 PM
   const [modoForzadoEstado, setModoForzadoEstado] = useState('auto'); // 'auto', 'abierto', 'cerrado'
   const [estaAbierto, setEstaAbierto] = useState(true);
 
@@ -223,7 +223,7 @@ export default function App() {
 
   const [modalEditarHorarios, setModalEditarHorarios] = useState(false);
   const [nuevaAperturaInput, setNuevaAperturaInput] = useState('9');
-  const [nuevoCierreInput, setNuevoCierreInput] = useState('17');
+  const [nuevoCierreInput, setNuevoCierreInput] = useState('23');
 
   // Helper para mostrar avisos sin bloquear la ejecución en Web / PWA
   const mostrarAviso = (titulo, mensaje, tipo = 'info') => {
@@ -605,6 +605,21 @@ export default function App() {
 
   const abrirModalHora = () => {
     if (horasDisponiblesHoy.length > 0) {
+      if (horaSeleccionada) {
+        const match = horaSeleccionada.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          const ampm = match[3].toUpperCase();
+          if (ampm === 'PM' && h < 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+          const matchItem = horasDisponiblesHoy.find((item) => item.hora24 === h);
+          if (matchItem) {
+            setHoraBloqueActivo(matchItem);
+            setModalHoraVisible(true);
+            return;
+          }
+        }
+      }
       const sigueValida = horasDisponiblesHoy.some((h) => h.hora24 === horaBloqueActivo?.hora24);
       if (!sigueValida) {
         setHoraBloqueActivo(horasDisponiblesHoy[0]);
@@ -2203,10 +2218,19 @@ export default function App() {
                 </Text>
               </View>
             ) : (
-              <>
-                {/* 1. SELECCIÓN DE HORA BASE (SOLO HORAS EN EL FUTURO) */}
+              <ScrollView
+                style={styles.timePickerScrollableBody}
+                contentContainerStyle={styles.timePickerScrollableBodyContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* 1. SELECCIÓN DE HORA BASE (HORAS EN EL FUTURO - HORIZONTAL PROTEGIDO) */}
                 <Text style={styles.stepSubtitle}>1. Elige la Hora:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalHoursScroll}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.horizontalHoursScroll}
+                  contentContainerStyle={styles.horizontalHoursContent}
+                >
                   {horasDisponiblesHoy.map((item) => {
                     const esActiva = horaBloqueActivo?.hora24 === item.hora24;
                     return (
@@ -2283,7 +2307,7 @@ export default function App() {
                     })}
                   </View>
                 )}
-              </>
+              </ScrollView>
             )}
 
             <TouchableOpacity
@@ -4283,11 +4307,18 @@ const styles = StyleSheet.create({
   // --- MODAL SELECTOR DE TIEMPO ---
   timePickerModalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
     width: '100%',
-    maxWidth: 440,
-    maxHeight: '88%',
+    maxWidth: 460,
+    maxHeight: '90%',
+  },
+  timePickerScrollableBody: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  timePickerScrollableBodyContent: {
+    paddingBottom: 6,
   },
   noHoursBox: {
     backgroundColor: '#fff1f2',
@@ -4316,37 +4347,50 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   stepSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     color: '#334155',
     marginTop: 8,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   horizontalHoursScroll: {
-    maxHeight: 52,
-    marginBottom: 10,
+    height: 48,
+    minHeight: 48,
+    maxHeight: 48,
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: 12,
+  },
+  horizontalHoursContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+    paddingRight: 10,
   },
   hourPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    height: 38,
+    paddingHorizontal: 15,
     backgroundColor: '#f1f5f9',
     borderRadius: 10,
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
     justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   hourPillActive: {
     backgroundColor: '#0284c7',
     borderColor: '#0284c7',
   },
   hourPillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#334155',
   },
   hourPillTextActive: {
     color: '#ffffff',
+    fontWeight: '800',
   },
   minutesGrid: {
     flexDirection: 'row',
