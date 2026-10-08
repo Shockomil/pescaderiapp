@@ -117,7 +117,7 @@ export default function App() {
   // --- DATOS EN TIEMPO REAL (FIRESTORE) ---
   const [productos, setProductos] = useState([]);
   const [horariosOcupadosDocs, setHorariosOcupadosDocs] = useState([]); // Solo turnos del día de hoy
-  const [telefonoContacto, setTelefonoContacto] = useState('6681234567');
+  const [telefonoContacto, setTelefonoContacto] = useState('6871689334');
 
   // Datos bancarios estructurados
   const [bancoNombre, setBancoNombre] = useState('BBVA');
@@ -779,7 +779,7 @@ export default function App() {
   };
 
   // --- NOTIFICACIÓN DIRECTA A TELEGRAM ---
-  const enviarNotificacionTelegram = async (mensajeHtml) => {
+  const enviarNotificacionTelegram = async (mensajeHtml, replyMarkup = null) => {
     const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk';
     const rawChatId = telegramChatId || '-5409202124';
 
@@ -791,16 +791,21 @@ export default function App() {
 
     for (const cid of possibleChatIds) {
       try {
+        const payload = {
+          chat_id: cid,
+          text: mensajeHtml,
+          parse_mode: 'HTML'
+        };
+        if (replyMarkup) {
+          payload.reply_markup = replyMarkup;
+        }
+
         const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            chat_id: cid,
-            text: mensajeHtml,
-            parse_mode: 'HTML'
-          })
+          body: JSON.stringify(payload)
         });
         const data = await response.json();
         if (data.ok) {
@@ -817,7 +822,7 @@ export default function App() {
   };
 
   // Enviar imagen del comprobante de transferencia por Telegram
-  const enviarFotoTelegram = async (imageUri, captionHtml) => {
+  const enviarFotoTelegram = async (imageUri, captionHtml, replyMarkup = null) => {
     const token = telegramBotToken || '8611799573:AAHifFtfK3mXUXxlmXEUeE2CO5_u3wIsyjk';
     const rawChatId = telegramChatId || '-5409202124';
 
@@ -827,6 +832,9 @@ export default function App() {
       if (captionHtml) {
         formData.append('caption', captionHtml);
         formData.append('parse_mode', 'HTML');
+      }
+      if (replyMarkup) {
+        formData.append('reply_markup', JSON.stringify(replyMarkup));
       }
 
       if (Platform.OS === 'web') {
@@ -896,6 +904,11 @@ export default function App() {
       mostrarAviso('Nombre Requerido', 'Por favor ingresa el nombre de la persona que recogerá el pedido.', 'error');
       return;
     }
+    const telLimpio = telefonoCliente.replace(/\D/g, '');
+    if (!telLimpio || telLimpio.length < 10) {
+      mostrarAviso('Teléfono Requerido', 'Por favor ingresa un número de teléfono / WhatsApp válido a 10 dígitos para contactarte sobre tu pedido.', 'error');
+      return;
+    }
     if (carrito.length === 0) {
       mostrarAviso('Carrito Vacío', 'Agrega al menos un producto a tu pedido para continuar.', 'error');
       return;
@@ -915,6 +928,7 @@ export default function App() {
       await addDoc(collection(db, 'horarios_ocupados'), {
         hora: horaSeleccionada,
         cliente: nombreCliente.trim(),
+        telefono: telLimpio,
         total: calcularTotalCarrito(),
         notas: notaEfectiva,
         fecha: hoyStr,
@@ -927,17 +941,19 @@ export default function App() {
       const metodoPagoTexto = metodoPago === 'transferencia' ? '💳 Transferencia Bancaria' : '💵 Efectivo en Sucursal';
       const fechaHoyFormateada = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-      // 3. Guardar en historial local del dispositivo y asegurar persistencia del nombre
+      // 3. Guardar en historial local del dispositivo y asegurar persistencia del nombre y teléfono
       try {
         await AsyncStorage.setItem('@nombre_cliente', nombreCliente.trim());
+        await AsyncStorage.setItem('@telefono_cliente', telLimpio);
       } catch (e) {
-        console.log('Error persistiendo nombre de cliente', e);
+        console.log('Error persistiendo datos de cliente', e);
       }
 
       const registroLocal = {
         folio: folio,
         fecha: fechaHoyFormateada,
         nombreCliente: nombreCliente.trim(),
+        telefonoCliente: telLimpio,
         total: total,
         hora: horaSeleccionada,
         notas: notaEfectiva,
@@ -965,6 +981,7 @@ export default function App() {
         `⏰ *HORA RECOLECCIÓN:* ${horaSeleccionada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `👤 *CLIENTE:* ${nombreCliente.trim()}\n` +
+        `📱 *TELÉFONO:* ${telLimpio}\n` +
         `💳 *MÉTODO DE PAGO:* ${metodoPagoTexto}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `🛒 *PRODUCTOS DEL PEDIDO:*\n` +
@@ -974,7 +991,7 @@ export default function App() {
         `💰 *TOTAL ESTIMADO:* $${total.toFixed(2)} MXN\n` +
         (metodoPago === 'transferencia' ? `📌 *Nota:* Pago por transferencia.\n` : '');
 
-      // 5. ENVIAR DIRECTAMENTE A TELEGRAM AL GRUPO DE LA EMPRESA
+      // 5. ENVIAR DIRECTAMENTE A TELEGRAM AL GRUPO DE LA EMPRESA CON BOTÓN DE WHATSAPP
       const lineasHtmlTelegram = carrito.map((item) => {
         const detalleCantidad = item.unidad === 'Pesos'
           ? `$${item.cantidad} MXN`
@@ -995,6 +1012,7 @@ export default function App() {
         `📅 <b>FECHA:</b> ${fechaHoyFormateada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `👤 <b>CLIENTE:</b> <b>${nombreCliente.trim()}</b>\n` +
+        `📱 <b>TELÉFONO / WHATSAPP:</b> <code>${telLimpio}</code>\n` +
         `💳 <b>MÉTODO DE PAGO:</b> ${metodoPagoTexto}\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `🛒 <b>PRODUCTOS:</b>\n` +
@@ -1008,12 +1026,25 @@ export default function App() {
             ? `📌 <i>El cliente pagará por transferencia bancaria.</i>\n`
             : '');
 
-      const enviadoTelegram = await enviarNotificacionTelegram(mensajeHtmlTelegram);
+      // Botón interactivo en Telegram para abrir WhatsApp con el cliente con un solo clic
+      const waUrlCliente = `https://wa.me/52${telLimpio}?text=${encodeURIComponent(`Hola ${nombreCliente.trim()}, te escribimos de Pescadería Batequis sobre tu pedido #${folio}`)}`;
+      const replyMarkupTelegram = {
+        inline_keyboard: [
+          [
+            {
+              text: '💬 Contactar al Cliente por WhatsApp',
+              url: waUrlCliente
+            }
+          ]
+        ]
+      };
 
-      // Si es transferencia y adjuntó comprobante, enviarlo de inmediato a Telegram
+      const enviadoTelegram = await enviarNotificacionTelegram(mensajeHtmlTelegram, replyMarkupTelegram);
+
+      // Si es transferencia y adjuntó comprobante, enviarlo de inmediato a Telegram con el mismo botón interactivo
       if (tieneComprobanteAdjunto) {
-        const captionComprobante = `🧾 <b>Comprobante de Pago Adjunto</b>\nFolio: <code>#${folio}</code>\nCliente: <b>${nombreCliente.trim()}</b>\nTotal: <b>$${total.toFixed(2)} MXN</b>`;
-        await enviarFotoTelegram(comprobanteTransferencia.uri, captionComprobante);
+        const captionComprobante = `🧾 <b>Comprobante de Pago Adjunto</b>\nFolio: <code>#${folio}</code>\nCliente: <b>${nombreCliente.trim()}</b> (Tel: ${telLimpio})\nTotal: <b>$${total.toFixed(2)} MXN</b>`;
+        await enviarFotoTelegram(comprobanteTransferencia.uri, captionComprobante, replyMarkupTelegram);
       }
 
       // 6. Crear objeto de Ticket Digital
@@ -1021,6 +1052,7 @@ export default function App() {
         folio: folio,
         fecha: fechaHoyFormateada,
         cliente: nombreCliente.trim(),
+        telefono: telLimpio,
         hora: horaSeleccionada,
         notas: notaEfectiva,
         metodoPago: metodoPagoTexto,
@@ -1553,7 +1585,7 @@ export default function App() {
                 <Text style={styles.cardSub}>Para identificar tu pedido al llegar a sucursal</Text>
               </View>
             </View>
-            <View style={[styles.formGroup, { marginBottom: 0 }]}>
+            <View style={styles.formGroup}>
               <View style={styles.inputLabelRow}>
                 <Text style={styles.inputLabel}>Nombre Completo *</Text>
                 {nombreCliente.trim().length > 0 && (
@@ -1566,6 +1598,24 @@ export default function App() {
                 placeholderTextColor="#94a3b8"
                 value={nombreCliente}
                 onChangeText={handleCambioNombreCliente}
+              />
+            </View>
+
+            <View style={[styles.formGroup, { marginBottom: 0 }]}>
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Teléfono / WhatsApp *</Text>
+                {telefonoCliente.trim().length > 0 && (
+                  <Text style={styles.inputHelperSaved}>✓ Guardado en tu dispositivo</Text>
+                )}
+              </View>
+              <TextInput
+                style={styles.textInputModern}
+                placeholder="Ej. 6871234567 (10 dígitos)"
+                placeholderTextColor="#94a3b8"
+                keyboardType="phone-pad"
+                maxLength={10}
+                value={telefonoCliente}
+                onChangeText={handleCambioTelefonoCliente}
               />
             </View>
           </View>
@@ -2173,6 +2223,26 @@ export default function App() {
                     </View>
                   </View>
                 )}
+
+                {/* BOTÓN DIRECTO DE WHATSAPP CON LA SUCURSAL PARA DUDAS O CANCELACIÓN */}
+                <TouchableOpacity
+                  style={styles.btnTicketWhatsAppHelp}
+                  onPress={() => {
+                    const telSucursal = telefonoContacto || '6871689334';
+                    const telSucursalLimpio = telSucursal.replace(/\D/g, '');
+                    const msg = `Hola Pescadería Batequis, soy ${ticketActual?.cliente}. Me comunico sobre mi pedido #${ticketActual?.folio} programado a las ${ticketActual?.hora} (Total: $${ticketActual?.total ? ticketActual.total.toFixed(2) : '0.00'} MXN).`;
+                    const url = `https://wa.me/52${telSucursalLimpio}?text=${encodeURIComponent(msg)}`;
+                    Linking.openURL(url).catch(() => {
+                      mostrarAviso('Contacto Sucursal', `Comunícate directamente al WhatsApp: ${telSucursal}`, 'info');
+                    });
+                  }}
+                >
+                  <Text style={styles.btnTicketWhatsAppHelpIcon}>💬</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.btnTicketWhatsAppHelpTitle}>¿Dudas, Cambios o Cancelar Pedido?</Text>
+                    <Text style={styles.btnTicketWhatsAppHelpSub}>Toca aquí para escribir a Sucursal por WhatsApp</Text>
+                  </View>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.btnCloseTicketModalPrimary}
@@ -4269,6 +4339,31 @@ const styles = StyleSheet.create({
     color: '#047857',
     marginTop: 2,
     lineHeight: 16,
+  },
+  btnTicketWhatsAppHelp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1.5,
+    borderColor: '#10b981',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  btnTicketWhatsAppHelpIcon: {
+    fontSize: 26,
+  },
+  btnTicketWhatsAppHelpTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065f46',
+  },
+  btnTicketWhatsAppHelpSub: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+    fontWeight: '600',
   },
   btnCloseTicketModalPrimary: {
     backgroundColor: '#0c4a6e',
